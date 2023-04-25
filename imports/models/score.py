@@ -5,7 +5,7 @@ from omicspred.models import Score
 
 class ScoreData(GenericData):
 
-    def __init__(self,score_id,variants_number,publication,platform,genomebuild,score_name=None):
+    def __init__(self,score_id,variants_number,publication,platform,genomebuild,method_name,score_name=None):
         GenericData.__init__(self)
         num = score_id.replace('OPGS','').lstrip('0')
         self.data = {
@@ -14,6 +14,7 @@ class ScoreData(GenericData):
             'variants_number': variants_number,
             'publication': publication,
             'platform': platform,
+            'method_name': method_name,
             'variants_genomebuild': genomebuild
         }
         if score_name:

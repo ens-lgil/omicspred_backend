@@ -3,6 +3,7 @@ import numpy as np
 from imports.models.score import ScoreData
 from imports.models.performance import PerformanceData
 from imports.models.omics import GeneData, ProteinData, MetaboliteData, PathwayData
+from imports.models.efo import EFOData
 from omicspred.models import Platform
 
 
@@ -11,6 +12,7 @@ class MetaboliteParser():
 
     def __init__(self, data_info:dict):
         self.study = data_info['name']
+        self.study_info = data_info['study_info']
         self.filepath = data_info['filepath']
         self.platform = data_info['platform']
         self.omicstype = data_info['type']
@@ -59,7 +61,7 @@ class MetaboliteParser():
 
             # Pathway info
             pathway = row[meta_gp_col]
-            subpathway = row[meta_gp_col]
+            subpathway = row[meta_subgp_col]
 
             # Score info
             score_id = row['OMICSPRED ID']
@@ -88,12 +90,17 @@ class MetaboliteParser():
             )
             metabolite_model = metabolite_data.create_model()
 
+            # EFO model
+            efo_data = EFOData(self.study_info['tissue'])
+            efo_model = efo_data.create_model()
 
             # Score model
-            score_data = ScoreData(score_id,variants_number,self.publication,self.platform,self.genomebuild)
+            method_name = self.study_info['method_name']
+            score_data = ScoreData(score_id,variants_number,self.publication,self.platform,self.genomebuild,method_name)
             score_model = score_data.create_model()
             score_model.save()
-            score_model.metabolite.add(metabolite_model)
+            score_model.metabolites.add(metabolite_model)
+            score_model.efos.add(efo_model)
             score_model.save()
 
             # Performance & Metric models

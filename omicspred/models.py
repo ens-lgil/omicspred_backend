@@ -56,6 +56,7 @@ class Publication(models.Model):
 class Platform(models.Model):
     """ Class to describe the platform used to get the omics data """
     name = models.CharField('Platform name', max_length=100)
+    full_name = models.CharField('Platform full name', max_length=100)
     version = models.CharField('Platform version', max_length=50)
     technic = models.CharField('Platform technic', max_length=100)
     type = models.CharField('Platform type', max_length=100)
@@ -80,11 +81,15 @@ class Cohort(models.Model):
         return self.name_short
 
 
-class MeasurementContext(models.Model):
-    """ Class to describe the context of the measurement (e.g. cell type) """
-    name = models.CharField('Measurement name', max_length=100)
-    type = models.CharField('Measurement type', max_length=100)
-    additional_info = models.CharField('Additional Information', max_length=250)
+class EFO(models.Model):
+    """ Class to store EFO entries """
+    id = models.CharField('EFO ID', max_length=30, primary_key=True)
+    label = models.CharField('EFO Label', max_length=500, db_index=True)
+    description = models.TextField('EFO Description', null=True)
+    url = models.CharField('EFO URL', max_length=500)
+    type = models.CharField('Entry type', max_length=100, null=True)
+
+    child_efos = models.ManyToManyField('self', verbose_name='Children EFO', symmetrical=False, related_name='parent_efos')
 
 
 class Sample(models.Model):
@@ -255,6 +260,7 @@ class Omics(models.Model):
 
 class Gene(Omics):
     """ Class to describe Gene entity """
+    synonyms = models.JSONField('Gene synonyms', null=True)
 
 
 class Transcript(Omics):
@@ -273,8 +279,8 @@ class Pathway(Omics):
 
 class Metabolite(Omics):
     """ Class to describe Metabolite entity """
-    pathway_group = models.ForeignKey(Pathway, on_delete=models.CASCADE, verbose_name='Associated Pathway Group', related_name="pathway_group_metabolite")
-    pathway_subgroup = models.ForeignKey(Pathway, on_delete=models.CASCADE, verbose_name='Associated Pathway Subgroup', related_name="pathway_subgroup_metabolite")
+    pathway_group = models.ForeignKey(Pathway, on_delete=models.CASCADE, verbose_name='Associated Pathway Group', related_name="pathway_group_metabolite", null=True)
+    pathway_subgroup = models.ForeignKey(Pathway, on_delete=models.CASCADE, verbose_name='Associated Pathway Subgroup', related_name="pathway_subgroup_metabolite", null=True)
 
 
 class Score(models.Model):
@@ -306,22 +312,13 @@ class Score(models.Model):
     # Links to related models
     publication = models.ForeignKey(Publication, on_delete=models.PROTECT, related_name='publication_score', verbose_name='Publication')
     platform = models.ForeignKey(Platform, on_delete=models.PROTECT, related_name='platform_score', verbose_name='Platform')
-    measurement_contexts = models.ManyToManyField(MeasurementContext, related_name='score_measurements', verbose_name='Measurement Context')
-
-
-    ## Omics entities
-    # gene = models.ForeignKey(Gene, on_delete=models.PROTECT, related_name='gene_score', verbose_name='Associated Gene', null=True)
-    # transcript = models.ForeignKey(Transcript, on_delete=models.PROTECT, related_name='transcript_score', verbose_name='Associated Transcript', null=True)
-    # protein = models.ForeignKey(Protein, on_delete=models.PROTECT, related_name='protein_score', verbose_name='Associated Protein', null=True)
-    # metabolite = models.ForeignKey(Metabolite, on_delete=models.PROTECT, related_name='metabolite_score', verbose_name='Associated Metabolite', null=True)
+    efos = models.ManyToManyField(EFO, verbose_name='EFO', related_name='associated_scores')
 
     ## Omics entities
-    gene = models.ManyToManyField(Gene, related_name='gene_score', verbose_name='Gene(s)')
-    transcript = models.ManyToManyField(Transcript, related_name='transcript_score', verbose_name='Transcript(s)')
-    protein = models.ManyToManyField(Protein, related_name='protein_score', verbose_name='Protein(s)')
-    metabolite = models.ManyToManyField(Metabolite, related_name='metabolite_score', verbose_name='Metabolite(s)')
-
-
+    genes = models.ManyToManyField(Gene, related_name='gene_score', verbose_name='Gene(s)')
+    transcripts = models.ManyToManyField(Transcript, related_name='transcript_score', verbose_name='Transcript(s)')
+    proteins = models.ManyToManyField(Protein, related_name='protein_score', verbose_name='Protein(s)')
+    metabolites = models.ManyToManyField(Metabolite, related_name='metabolite_score', verbose_name='Metabolite(s)')
 
     # # LICENSE information/text
     # license = models.TextField('License/Terms of Use', default='''PGS obtained from the Catalog should be cited appropriately, and used in accordance with any licensing restrictions set by the authors. See EBI Terms of Use (https://www.ebi.ac.uk/about/terms-of-use/) for additional details.''')

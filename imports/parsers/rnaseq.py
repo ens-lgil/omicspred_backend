@@ -2,6 +2,7 @@ import pandas as pd
 from imports.models.score import ScoreData
 from imports.models.performance import PerformanceData
 from imports.models.omics import GeneData
+from imports.models.efo import EFOData
 from omicspred.models import Platform
 
 
@@ -10,6 +11,7 @@ class RNAseqParser():
 
     def __init__(self, data_info:dict):
         self.study = data_info['name']
+        self.study_info = data_info['study_info']
         self.filepath = data_info['filepath']
         self.platform = data_info['platform']
         self.omicstype = data_info['type']
@@ -52,12 +54,19 @@ class RNAseqParser():
             gene_data = GeneData(external_id=gene_id,name=gene_name)
             gene_model = gene_data.create_model()
 
+            # EFO model
+            efo_data = EFOData(self.study_info['tissue'])
+            efo_model = efo_data.create_model()
+
             # Score model
-            score_data = ScoreData(score_id,variants_number,self.publication,self.platform,self.genomebuild)
+            method_name = self.study_info['method_name']
+            score_data = ScoreData(score_id,variants_number,self.publication,self.platform,self.genomebuild,method_name)
             score_model = score_data.create_model()
             score_model.save()
-            score_model.gene.add(gene_model)
+            score_model.genes.add(gene_model)
+            score_model.efos.add(efo_model)
             score_model.save()
+
 
             # Performance & Metric models
             # - Training

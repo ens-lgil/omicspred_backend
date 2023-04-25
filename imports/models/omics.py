@@ -227,12 +227,13 @@ class PathwayData(GenericData):
             with transaction.atomic():
                 self.check_pathway()
                 if not self.model:
-                    self.model = Pathway()
-                    if self.name and self.name not in [None,np.nan,'nan','']:
-                        self.model.name=self.name
-                    if self.external_id:
-                        self.model.external_id=self.external_id
-                    self.model.save()
+                    if self.name not in [None,np.nan,'nan',''] or self.external_id:
+                        self.model = Pathway()
+                        if self.name not in [None,np.nan,'nan','']:
+                            self.model.name=self.name
+                        if self.external_id:
+                            self.model.external_id=self.external_id
+                        self.model.save()
         except IntegrityError as e:
             self.model = None
             print('Error with the creation of the Pathway')

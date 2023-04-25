@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from catalog.models import *
+from omicspred.models import *
 
 
 class CohortSerializer(serializers.ModelSerializer):
@@ -44,7 +44,7 @@ class PublicationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Publication
-        meta_fields = ('id', 'title', 'doi', 'pmid', 'journal', 'firstauthor', 'date_publication')
+        meta_fields = ('title', 'doi', 'pmid', 'journal', 'firstauthor', 'date_publication')
         fields = meta_fields
         read_only_fields = meta_fields
 
@@ -66,6 +66,15 @@ class PlatformSerializer(serializers.ModelSerializer):
     class Meta:
         model = Platform
         meta_fields = ('name', 'version', 'technic', 'type')
+        fields = meta_fields
+        read_only_fields = meta_fields
+
+
+class EFOSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = EFO
+        meta_fields = ('id', 'label', 'description', 'url', 'type')
         fields = meta_fields
         read_only_fields = meta_fields
 
@@ -116,10 +125,11 @@ class ScoreSerializer(serializers.ModelSerializer):
     publication = PublicationSerializer(many=False, read_only=True)
     platform = PlatformSerializer(many=False, read_only=True)
 
-    gene = GeneSerializer(many=True, read_only=True)
-    transcript = TranscriptSerializer(many=True, read_only=True)
-    protein = ProteinSerializer(many=True, read_only=True)
-    metabolite = MetaboliteSerializer(many=True, read_only=True)
+    genes = GeneSerializer(many=True, read_only=True)
+    transcripts = TranscriptSerializer(many=True, read_only=True)
+    proteins = ProteinSerializer(many=True, read_only=True)
+    metabolites = MetaboliteSerializer(many=True, read_only=True)
+    efos = EFOSerializer(many=True, read_only=True)
 
     date_release = serializers.SerializerMethodField('get_date_released')
 
@@ -127,7 +137,7 @@ class ScoreSerializer(serializers.ModelSerializer):
         model = Score
         meta_fields = ('id', 'name', 'trait_reported', 'trait_additional', 'method_name', 'method_params',
                     'trait_reported', 'trait_additional', 'method_name', 'method_params', 'variants_number',
-                    'publication', 'platform', 'gene', 'transcript', 'protein', 'metabolite',
+                    'publication', 'platform', 'genes', 'transcripts', 'proteins', 'metabolites', 'efos',
                     'variants_interactions', 'variants_genomebuild', 'date_release')
         fields = meta_fields
         read_only_fields = meta_fields
@@ -137,7 +147,6 @@ class ScoreSerializer(serializers.ModelSerializer):
 
 
 class PerformanceSerializer(serializers.ModelSerializer):
-    phenotype_efo = EFOTraitSerializer(many=True, read_only=True)
     publication = PublicationSerializer(many=False, read_only=True)
     sample = SampleSerializer(many=False, read_only=True)
 
