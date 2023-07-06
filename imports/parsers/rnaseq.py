@@ -12,6 +12,7 @@ class RNAseqParser():
     def __init__(self, data_info:dict):
         self.study = data_info['name']
         self.study_info = data_info['study_info']
+        self.gwas_data = data_info['gwas_data']
         self.filepath = data_info['filepath']
         self.platform = data_info['platform']
         self.omicstype = data_info['type']
@@ -20,18 +21,29 @@ class RNAseqParser():
         self.genomebuild = data_info['genomebuild']
 
 
-    def parse_performance_metric(self,score,data_values,cohort_name,ancestry,type):
+    def parse_performance_metric(self,score,efo,data_values,cohort_data):
         ''' Parse performance and metric data '''
         sample = None
         extra = None
         performance_model = None
+
+        cohort_name = cohort_data['name']
+        ancestry = cohort_data['ancestry']
+        type = cohort_data['vtype']
 
         for sample_info in self.samples:
             if sample_info['cohort'] == cohort_name and sample_info['ancestry'] == ancestry:
                 sample = sample_info['sample']
                 extra = sample_info['entities_count']+' genes'
         if sample:
-            performance_data = PerformanceData(score,self.publication,sample,type,extra)
+            gwas_info = {}
+            platform_name = self.platform.name
+            gwas_data = self.gwas_data.data
+            if platform_name in gwas_data.keys():
+                if cohort_name in gwas_data[platform_name].keys():
+                    gwas_info = gwas_data[platform_name][cohort_name]
+
+            performance_data = PerformanceData(score,self.publication,sample,self.platform,efo,type,gwas_info,extra)
             performance_data.add_metric(data_values)
             performance_model = performance_data.create_model()
 
@@ -64,30 +76,35 @@ class RNAseqParser():
             score_model = score_data.create_model()
             score_model.save()
             score_model.genes.add(gene_model)
-            score_model.efos.add(efo_model)
+            # score_model.efos.add(measurement_context_model)
             score_model.save()
 
 
             # Performance & Metric models
             # - Training
+            cohort_internal_label = self.study_info['internal_label']
+            cohort_internal = self.study_info['internal_cohort']
             training_values = {
-                'R2': row['Internal_R2'],
-                'R2_pvalue': row['Internal_R2_pvalue'],
-                'Rho': row['Internal_Rho'],
-                'Rho_pvalue': row['Internal_Rho_pvalue']
+                'R2': row[f'{cohort_internal_label}_R2'],
+                'R2_pvalue': row[f'{cohort_internal_label}_R2_pvalue'],
+                'Rho': row[f'{cohort_internal_label}_Rho'],
+                'Rho_pvalue': row[f'{cohort_internal_label}_Rho_pvalue']
             }
-            self.parse_performance_metric(score_model,training_values,'Internal','European','T')
+            cohort_entry = self.study_info['sample_cohort_info'][cohort_internal]
+            self.parse_performance_metric(score_model,efo_model,training_values,cohort_entry)
+
             # - Validations
-            cohort_info = {
-                'INTERVAL_Withheld_Set': {'name': 'INTERVAL withheld subset', 'ancestry': 'European', 'vtype': 'IV'},
-            }
-            for cohort in cohort_info.keys():
-                validation_values = {
-                    'R2': row[f'{cohort}_R2'],
-                    'R2_pvalue': row[f'{cohort}_R2_pvalue'],
-                    'Rho': row[f'{cohort}_Rho'],
-                    'Rho_pvalue': row[f'{cohort}_Rho_pvalue'],
-                    'MissingRate': row[f'{cohort}_MissingRate']
-                }
-                cohort_entry = cohort_info[cohort]
-                self.parse_performance_metric(score_model,validation_values,cohort_entry['name'],cohort_entry['ancestry'],cohort_entry['vtype'])
+            # cohort_info = {
+            #     'INTERVAL_Withheld_Set': {'name': 'INTERVAL withheld subset', 'ancestry': 'European', 'vtype': 'IV'},
+            # }
+            for cohort in self.study_info['sample_cohort_info'].keys():
+                if cohort != cohort_internal:
+                    validation_values = {
+                        'R2': row[f'{cohort}_R2'],
+                        'R2_pvalue': row[f'{cohort}_R2_pvalue'],
+                        'Rho': row[f'{cohort}_Rho'],
+                        'Rho_pvalue': row[f'{cohort}_Rho_pvalue'],
+                        'MissingRate': row[f'{cohort}_MissingRate']
+                    }
+                    cohort_entry = self.study_info['sample_cohort_info'][cohort]
+                    self.parse_performance_metric(score_model,efo_model,validation_values,cohort_entry)

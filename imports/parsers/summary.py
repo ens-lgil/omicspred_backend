@@ -6,10 +6,12 @@ from imports.models.sample import SampleData
 
 class SummaryParser():
 
-    def __init__(self, summary_info:dict):
+    def __init__(self, summary_info:dict, extra_info:dict):
         self.study = summary_info['name']
         self.filepath = summary_info['filepath']
+        self.extra_sample_info = extra_info
         self.validation = []
+        self.samples = []
 
 
     def parse_summary_file(self):
@@ -46,9 +48,9 @@ class SummaryParser():
         self.validation.insert(0,training)
 
         print(f"# {self.study}")
-        for v in self.validation:
-            print(f"  > Type: {v['type']} | Cohort {v['cohort']}")
-            print(f"    Ancestry: {v['ancestry']} | Entities {v['count']}")
+        # for v in self.validation:
+        #     print(f"  > Type: {v['type']} | Cohort {v['cohort']}")
+        #     print(f"    Ancestry: {v['ancestry']} | Entities {v['count']}")
 
 
     def parse_validation(self, entry):
@@ -69,7 +71,6 @@ class SummaryParser():
 
 
     def import_to_database(self):
-        samples_info = []
         for v in self.validation:
             # Cohort
             if 'url' in v.keys():
@@ -77,21 +78,31 @@ class SummaryParser():
             else:
                 cohort_data = CohortData(v['cohort'],v['cohort'])
             cohort_model = cohort_data.create_model()
+            cohort_name = v['cohort']
 
             # Sample
             sample_ancestries = v['ancestry'].split(', ')
             for sample_ancestry in sample_ancestries:
+                cohort_label = None
                 [sample_number, ancestry_broad] = sample_ancestry.split(' ',1)
-                sample = SampleData(sample_number, ancestry_broad, cohort_model)
+                for sample_cohort in self.extra_sample_info.keys():
+                    if self.extra_sample_info[sample_cohort]['name'] == cohort_name and self.extra_sample_info[sample_cohort]['ancestry'] == ancestry_broad:
+                        cohort_label = sample_cohort
+                        break
+                if cohort_label:
+                    percent_male = self.extra_sample_info[cohort_label]['percent_male']
+                    sample_age = self.extra_sample_info[cohort_label]['age']
+                    sample_age_sd = self.extra_sample_info[cohort_label]['age_sd']
+                    sample = SampleData(sample_number, ancestry_broad, cohort_model, percent_male, sample_age, sample_age_sd)
+                else:
+                    sample = SampleData(sample_number, ancestry_broad, cohort_model)
                 sample_model_exist = sample.sample_model_exist()
                 if not sample_model_exist:
                     sample_data = sample.create_model()
+
                 else:
                     sample_data = sample_model_exist
 
-                if v['type'] == 'training':
-                    cohort_name = 'Internal'
-                else:
-                    cohort_name = v['cohort']
-                samples_info.append({ 'cohort': cohort_name, 'ancestry':ancestry_broad, 'sample': sample_data, 'entities_count': v['count'] })
-        return samples_info
+                self.samples.append({ 'cohort': cohort_name, 'ancestry':ancestry_broad, 'sample': sample_data, 'entities_count': v['count'] })
+
+        return self.samples

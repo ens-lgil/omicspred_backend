@@ -37,6 +37,15 @@ class GeneData(GenericData):
                 self.model = None
 
 
+    def update_gene(self):
+        '''
+        Update existing Gene model by adding its Ensembl ID
+        '''
+        self.model.external_id = self.external_id
+        self.model.external_id_source = 'Ensembl'
+        self.model.save()
+
+
     @transaction.atomic
     def create_model(self):
         '''
@@ -55,6 +64,8 @@ class GeneData(GenericData):
                         if self.external_id.startswith('ENSG'):
                             self.model.external_id_source = 'Ensembl'
                     self.model.save()
+                elif not self.model.external_id and self.external_id:
+                    self.update_gene()
         except IntegrityError as e:
             self.model = None
             print('Error with the creation of the Gene')

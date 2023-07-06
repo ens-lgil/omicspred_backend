@@ -10,7 +10,7 @@ class MetricData(GenericData):
         'R2_pvalue'  : "Pearson's correlation",
         'Rho': "Spearman's rank correlation",
         'Rho_pvalue' : "Spearman's rank correlation",
-        'MissingRate': "Spearman's rank correlation"
+        'MissingRate': "Variant Missing Rate"
     }
 
     # Metric method
@@ -26,13 +26,18 @@ class MetricData(GenericData):
         'MissingRate': ('Missing Rate', 'Missing Rate')
     }
 
-    def __init__(self,name,value):
+    def __init__(self,name,value,pvalue=None):
         GenericData.__init__(self)
+        if 'E' in str(value):
+            value = value.replace('E','e')
+            value = float(value)
         self.name = name.strip()
         self.data = {
             'performance_type': self.type_choices[self.name],
             'estimate': value
         }
+        if pvalue:
+            self.data['pvalue'] = pvalue
 
 
     def set_names(self):

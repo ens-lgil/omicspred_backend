@@ -5,11 +5,17 @@ from omicspred.models import Sample
 
 class SampleData(GenericData):
 
-    def __init__(self,sample_number,ancestry,cohort):
+    def __init__(self,sample_number,ancestry,cohort, percent_male=None, sample_age=None, sample_age_sd=None):
         GenericData.__init__(self)
         self.data['sample_number'] = sample_number
         self.data['ancestry_broad'] = ancestry
         self.data['cohort'] = cohort
+        if percent_male:
+            self.data['sample_percent_male'] = percent_male
+        if sample_age:
+            self.data['sample_age'] = sample_age
+        if sample_age_sd:
+            self.data['sample_age_sd'] = sample_age_sd
 
 
     def sample_model_exist(self):

@@ -1,7 +1,9 @@
+from imports.parsers.gwas import GWASParser
 from imports.parsers.summary import SummaryParser
 from imports.parsers.rnaseq import RNAseqParser
 from imports.parsers.protein import ProteinParser
 from imports.parsers.metabolite import MetaboliteParser
+from imports.parsers.data_content import *
 from omicspred.models import Publication, Platform
 
 
@@ -45,68 +47,13 @@ def run():
 
     path = '/Users/lg10/Workspace/git/clone/OmicsPred/src/data'
 
-    method_name = 'Bayesian Ridge regression'
+    print("# Fetch GWAS data")
+    gwas_files = [f'{path}/paper_data/supplementary_tables_gwas.csv',f'{path}/paper_data/supplementary_tables_qc.csv']
+    gwas_data = GWASParser(gwas_files)
+    gwas_data.parse_files()
+    #
+    # print(f">> GWAS DATA:\n{gwas_data.data}")
 
-    studies = {
-        'Proteomics_Somalogic': {
-            'tissue': {
-                'id': 'UBERON_0001969',
-                'label': 'blood plasma',
-                'description': 'The liquid component of blood, in which erythrocytes are suspended.',
-                'url': 'http://purl.obolibrary.org/obo/UBERON_0001969',
-                'type': 'tissue'
-            },
-            'version': '3.0',
-            'method_name': method_name,
-            'technic': 'aptamer-based multiplex protein assay'
-        },
-        'Proteomics_Olink': {
-            'tissue': {
-                'id': 'UBERON_0001969',
-                'label': 'blood plasma',
-                'description': 'The liquid component of blood, in which erythrocytes are suspended.',
-                'url': 'http://purl.obolibrary.org/obo/UBERON_0001969',
-                'type': 'tissue'
-            },
-            'method_name': method_name,
-            'full_name': 'Olink Target',
-            'technic': 'antibody-based proximity extension assay for proteins'
-        },
-        'Metabolomics_Nightingale': {
-            'tissue': {
-                'id': 'BTO_0000133',
-                'label': 'blood serum',
-                'description': 'The cell-free portion of the blood from which the fibrinogen has been separated in the process of clotting.',
-                'url': 'http://purl.obolibrary.org/obo/BTO_0000133',
-                'type': 'tissue'
-            },
-            'method_name': method_name,
-            'technic': 'proton nuclear magnetic resonance (NMR) spectroscopy platform'
-        },
-        'Metabolomics_Metabolon': {
-            'tissue': {
-                'id': 'UBERON_0001969',
-                'label': 'blood plasma',
-                'description': 'The liquid component of blood, in which erythrocytes are suspended.',
-                'url': 'http://purl.obolibrary.org/obo/UBERON_0001969',
-                'type': 'tissue'
-            },
-            'method_name': method_name,
-            'full_name': 'Metabolon HD4',
-            'technic': 'untargeted mass spectrometry metabolomics platform'
-        },
-        'Transcriptomics_Illumina_RNAseq': {
-            'tissue': {
-                'id': 'UBERON_0000178',
-                'label': 'blood',
-                'description': 'A fluid that is composed of blood plasma and erythrocytes.',
-                'url': 'http://purl.obolibrary.org/obo/UBERON_0000178',
-                'type': 'tissue'
-            },
-            'method_name': method_name,
-            'full_name': 'Illumina NovaSeq 6000'
-        }
-    }
 
     publication = add_publication()
 
@@ -114,10 +61,11 @@ def run():
         print(f'\n\n##### {study} #####\n')
         # Summary
         summary_info = { 'name': study, 'filepath': f'{path}/{study}/sumarry.json'}
-        summary = SummaryParser(summary_info)
+        summary = SummaryParser(summary_info, studies[study]['sample_cohort_info'])
         summary.parse_summary_file()
         samples_info = summary.import_to_database()
-
+        # continue
+        
         # Data
         platform = study.split('_',1)[1]
         filename = study.split('_')[-1]
@@ -126,8 +74,10 @@ def run():
         data_info = {
             'name': study,
             'study_info': studies[study],
+            'gwas_data': gwas_data,
             'type': type,
             'platform': platform_model,
+            'protein_platform': protein_platform,
             'filepath': f'{path}/paper_data/{filename}.csv',
             'samples_info': samples_info,
             'publication': publication,
