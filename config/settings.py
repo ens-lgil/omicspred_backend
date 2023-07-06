@@ -76,8 +76,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework'
+    'rest_framework',
+    'corsheaders' # <= Added for test
 ]
+
 # Local app installation
 if OP_ON_GAE == 0:
     local_apps = [
@@ -88,12 +90,23 @@ if OP_ON_GAE == 0:
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # <= Added for test
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+if DEBUG == True:
+    debug_apps = [
+        'debug_toolbar' # Debug SQL queries
+    ]
+    INSTALLED_APPS.extend(debug_apps)
+    debug_middlewares = [
+        'debug_toolbar.middleware.DebugToolbarMiddleware', # Debug SQL queries
+    ]
+    MIDDLEWARE.extend(debug_middlewares)
 
 ROOT_URLCONF = 'config.urls'
 
@@ -177,6 +190,11 @@ USE_I18N = True
 USE_TZ = True
 
 
+INTERNAL_IPS = [
+    "127.0.0.1",
+]
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
@@ -225,7 +243,7 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_api.pagination.CustomPagination',
-    'PAGE_SIZE': 100,
+    'PAGE_SIZE': 250,
     'EXCEPTION_HANDLER': 'rest_api.views.custom_exception_handler',
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -236,3 +254,14 @@ REST_FRAMEWORK = {
         'user': '100/min'
     }
 }
+
+
+#-----------------#
+#  CORS Settings  #
+#-----------------#
+# CORS_ALLOWED_ORIGIN_REGEXES = [
+#     r"^https:\/\/\w+\.ebi\.ac\.uk$"
+# ]
+CORS_URLS_REGEX = r'^/rest/.*$'
+CORS_ALLOW_METHODS = ['GET']
+CORS_ALLOW_ALL_ORIGINS = True

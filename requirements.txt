@@ -12,7 +12,7 @@ psycopg2-binary==2.9.6
 djangorestframework==3.14.0
 #django-cors-headers==3.13.0
 #### Others ####
-requests==2.28.1
+requests==2.31.0
 
 # For testing only:
 django-debug-toolbar==3.8.1

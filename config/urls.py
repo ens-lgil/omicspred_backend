@@ -21,3 +21,15 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('rest_api.urls')),
 ]
+
+
+# Debug SQL queries
+from django.conf import settings
+if settings.DEBUG:
+    from django.urls import include  # For django versions from 2.0 and
+    import debug_toolbar
+    urlpatterns = [
+        path('__debug__/', include(debug_toolbar.urls)),
+    ] + urlpatterns
+    from django.conf.urls.static import static
+    #urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
