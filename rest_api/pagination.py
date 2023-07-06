@@ -7,7 +7,9 @@ from collections import OrderedDict
 class CustomPagination(LimitOffsetPagination):
 
     min_limit = 1
-    max_limit = 250
+    max_limit = 500
+    #max_limit = 250
+
 
     def get_paginated_response(self, data):
         ''' Customise the head of the pagination response '''

@@ -62,6 +62,11 @@ class Platform(models.Model):
     type = models.CharField('Platform type', max_length=100)
 
 
+    @property
+    def scores_count(self):
+        return self.platform_score.count()
+
+
 class PublicationPlatform(models.Model):
     """ Class linking the Publication to the Platform """
     publication = models.ForeignKey(Publication, on_delete=models.PROTECT, related_name='publication_pp', verbose_name='Publication')
@@ -104,7 +109,9 @@ class Sample(models.Model):
     # sample_cases = models.IntegerField('Number of Cases', null=True)
     # sample_controls = models.IntegerField('Number of Controls', null=True)
     sample_percent_male = models.FloatField('Percent of Participants Who are Male', validators=[MinValueValidator(0), MaxValueValidator(100)], null=True)
-    sample_age = models.IntegerField('Sample Age', null=True)
+    sample_age = models.FloatField('Sample Age', null=True)
+    sample_age_sd = models.FloatField('Mean standard deviation of Age', null=True)
+
 
     ## Ancestry
     ancestry_broad = models.CharField('Broad Ancestry Category', max_length=250)
@@ -137,14 +144,6 @@ class Sample(models.Model):
         if self.sample_cases != None:
             percent = (self.sample_cases / self.sample_number) * 100
             return round(percent,2)
-        else:
-            return None
-
-    @property
-    def display_sampleset(self):
-        samplesets = self.sampleset.all()
-        if samplesets:
-            return samplesets[0]
         else:
             return None
 
@@ -312,7 +311,7 @@ class Score(models.Model):
     # Links to related models
     publication = models.ForeignKey(Publication, on_delete=models.PROTECT, related_name='publication_score', verbose_name='Publication')
     platform = models.ForeignKey(Platform, on_delete=models.PROTECT, related_name='platform_score', verbose_name='Platform')
-    efos = models.ManyToManyField(EFO, verbose_name='EFO', related_name='associated_scores')
+    # efos = models.ManyToManyField(EFO, verbose_name='EFO', related_name='associated_scores')
 
     ## Omics entities
     genes = models.ManyToManyField(Gene, related_name='gene_score', verbose_name='Gene(s)')
@@ -335,12 +334,21 @@ class Score(models.Model):
         self.num = n
         self.id = 'OPGS' + str(n).zfill(6)
 
+    @property
+    def performance_data(self):
+        data = {}
+        for perf in self.score_performance.all():
+            for cohort in perf.cohort_metrics.keys():
+                data[cohort] = perf.cohort_metrics[cohort]
+        return data
 
 class Performance(models.Model):
     """ Class for Performance Metric """
-    score = models.ForeignKey(Score, on_delete=models.CASCADE, verbose_name='Score') # \Score that the metrics are associated with
+    score = models.ForeignKey(Score, on_delete=models.CASCADE, verbose_name='Score', related_name='score_performance') # \Score that the metrics are associated with
     publication = models.ForeignKey(Publication, on_delete=models.PROTECT, verbose_name='Peformance Source', related_name='publication_performance') # Study that reported performance metrics
     sample = models.ForeignKey(Sample, on_delete=models.PROTECT, verbose_name='Peformance Sample', related_name='sample_performance') # Sample that is associated with
+    platform = models.ForeignKey(Platform, on_delete=models.PROTECT, verbose_name='Peformance Platform', related_name='platform_performance') # Platform that is associated with
+    efo = models.ForeignKey(EFO, on_delete=models.PROTECT, verbose_name='Peformance EFO', related_name='efo_performance', null=True) # EFO trait that is associated with
     # Evaluation Type
     EVALUATION_CHOICES = [
         ('T',  'Training'),
@@ -354,11 +362,51 @@ class Performance(models.Model):
                             verbose_name='Evaluation Type'
                             )
     performance_additional = models.TextField('Additional Information', default='')
+    source_gwas_catalog = models.CharField('GWAS Catalog Study ID (GCST...)', max_length=20, null=True)
+    source_doi = models.CharField('Source DOI', max_length=100, null=True)
+    covariates = models.TextField('Covariates Included in the Performance', null=True)
+    cohort_label = models.CharField('Cohort label', max_length=100, default='')
     curation_notes = models.TextField('Curation Notes', default='')
 
     @property
     def associated_pgs_id(self):
         return self.score.id
+
+    @property
+    def performance_metrics(self):
+        perf_metrics = []
+
+        metrics = self.performance_metric.all()
+        if metrics:
+            # print(f">> {len(metrics)}")
+            for m in metrics:
+                # print(f"> {m.name_short}: {m.estimate}")
+                # if type(m.estimate) == 'int':
+                metric_data = {
+                    'type': m.get_performance_type_display(),
+                    'name_long': m.name,
+                    'name_short': m.name_short,
+                    'estimate': m.display_value(m.estimate)
+                }
+                if m.pvalue:
+                    metric_data['p_value'] = m.display_value(m.pvalue)
+                perf_metrics.append(metric_data)
+
+        return perf_metrics
+
+    @property
+    def cohort_metrics(self):
+        cohort_metrics = {}
+        #cohort_label = '_'.join([x.name_short for x in self.sample.cohorts.all()])
+        cohort_label = self.cohort_label
+        metrics = self.performance_metric.all()
+        if metrics:
+            for m in metrics:
+                cohort_metrics[f'{cohort_label}_{m.name_short}'] = {
+                    'label': f'{cohort_label} {m.name_short}',
+                    'estimate': m.display_value(m.estimate)
+                }
+        return cohort_metrics
 
 
 class Metric(models.Model):
@@ -379,9 +427,8 @@ class Metric(models.Model):
     source = models.CharField(verbose_name='Performance Metric  Source', max_length=100, null=True)
 
     estimate = models.FloatField(verbose_name='Estimate', null=False)
-    # unit = models.TextField(verbose_name='Units of the effect size', max_length=100, blank = False)
-    # ci = DecimalRangeField(verbose_name='95% Confidence Interval', null=True)
-    # se = models.FloatField(verbose_name='Standard error of the effect', null=True)
+    pvalue = models.FloatField(verbose_name='p-value', null=True)
+
 
     def __str__(self):
         s = '{}'.format(self.estimate)
@@ -390,3 +437,13 @@ class Metric(models.Model):
             return '%s (%s): %s'%(self.name, self.name_short, s)
         else:
             return '%s: %s'%(self.name, s)
+
+
+    def display_value(self,value):
+        # Use the scientific notation
+        if (0 < value < 0.00001) or (-0.00001 < value < 0):
+            new_value = '{:.2e}'.format(value)
+        # Round numbers to 5 numbers max
+        else:
+            new_value = round(value, 5)
+        return new_value
