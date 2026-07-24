@@ -1,4 +1,4 @@
-# OmicsPred backend
+# OmicsPred - backend
 
 Backend part of the OmicsPred Project
 
@@ -6,6 +6,7 @@ Backend part of the OmicsPred Project
 * OmicsPred REST API website: [https://rest.omicspred.org/](https://rest.omicspred.org/)
 
 ## Roles
+
 Manage import, querying and retrieval of the OmicsPred metadata:
 
 * Scripts to import the metadata and generate the genetic scoring files (app [imports](https://github.com/OmicsPred/omicspred_backend/tree/main/imports) -> [README](https://github.com/OmicsPred/omicspred_backend/tree/main/imports/README.md))
@@ -18,10 +19,9 @@ Manage import, querying and retrieval of the OmicsPred metadata:
 
 | Tool | Role | Version |
 | ---- | ---- | ------- |
-| [PostgreSQL](https://www.postgresql.org/)| Database to store and query metadata | >= 18 |
+| [PostgreSQL](https://www.postgresql.org/) | Database to store and query metadata | >= 18 |
 | [ElasticSearch](https://www.elastic.co/) | Server used as search engine | 8.xx (e.g. 8.19) |
-| [Django ](https://www.djangoproject.com/) | Python framework to communicate with the database, the ElasticSearch indexes and build a REST API | 6.0.x (e.g. 6.0.7) |
-
+| [Django](https://www.djangoproject.com/) | Python framework to communicate with the database, the ElasticSearch indexes and build a REST API | 6.0.x (e.g. 6.0.7) |
 
 ## Setup
 
@@ -47,14 +47,14 @@ Go to root of the repository (e.g. `cd .../omicspred_backend`)
   python manage.py search_index --create
   ```
 
-  > [!WARNING]
-  > The indexing of the scores takes few hours (2-3h)!
-
   To rebuild existing OmicsPred indexes:
 
   ```bash
     python manage.py search_index --rebuild -f
   ```
+
+> [!WARNING]
+> The indexing of the scores takes few hours (2-3h)!
 
 ## Deployment
 
@@ -63,6 +63,7 @@ First of all, you need to rename and then update the file `app.yaml_template` to
 ### Local
 
 Run the command:
+
 ```bash
 python manage.py runserver
 ```
