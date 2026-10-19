@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date
 from omicspred.models import *
 from exports.exports import OPExport, fields_to_export, dataset_files
-
+from exports.config import use_dataset_name
 
 class MetadataExport:
 
@@ -38,6 +38,10 @@ class MetadataExport:
                 exit()
         if self.sqlite_file:
             filename = self.sqlite_file.replace('.db','_metadata.xlsx')
+        elif use_dataset_name == True:
+            fn_raw_prefix = f'{self.dataset_id}_{self.dataset.name}'
+            fn_prefix = fn_raw_prefix.replace(' - ','_').replace('.','_').replace(' ','_').replace('__','_')
+            filename = f'{fn_prefix}_metadata.xlsx'
         else:
             filename = f'{self.dataset_id}_metadata.xlsx'
         self.filepath = f'{exports_dir}/{filename}'

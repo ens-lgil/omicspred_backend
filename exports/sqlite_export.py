@@ -220,7 +220,7 @@ class SqliteExport:
 
     def get_score_data(self, dataset_name:str, score:Score, gene:Gene, reported_trait_id:str, gene_id:str, omics_type:str, metrics:dict) -> dict:
         score_id = score.id
-        if dataset_name and self.gtex_prefix_study in dataset_name:
+        if dataset_name and dataset_name.startswith(self.gtex_prefix_study):
             score_data = {
                 'omicspred_id': score_id,
                 'gene': reported_trait_id,
@@ -279,7 +279,7 @@ class SqliteExport:
             dataset_name = dataset.name
             omics_type = dataset.platform.platform_master.type
             dataset_label = dataset_name if dataset_name else dataset.platform.name
-            if dataset_name and self.gtex_prefix_study in dataset_name:
+            if dataset_name and dataset_name.startswith(self.gtex_prefix_study):
                 ds_components = dataset_name.split(' - ')
                 dataset_label = f'{ds_components[0]}_{ds_components[3]}_{ds_components[1]}_{ds_components[2]}'
                 method_name = self.methods_mapping[ds_components[2]]
@@ -287,7 +287,7 @@ class SqliteExport:
                 if method_name != sqlite_default_values['method_name'] or platform_name != sqlite_default_values['platform_name']:
                     print('\t> Skipped')
                     continue
-            dataset_label = dataset_label.replace(' ','_').replace("'",'_').replace('-','_')
+            dataset_label = dataset_label.replace(' - ','_').replace(' ','_').replace("'",'_').replace("-",'_')
             sql_file = f'{dataset.id}_{dataset_label}.db'
             # print(f'dataset_name: {dataset_name}')
             # print(f'label: {dataset_label}')
@@ -314,7 +314,6 @@ class SqliteExport:
                 dataset_dir = self.tissues_mapping[dataset_tissue]
             else:
                 dataset_dir = dataset.id
-            
             insert_extra_block = []
             insert_weights_block = []
 

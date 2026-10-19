@@ -19,8 +19,18 @@ def rest_api(folder_id:int, dev_token:str, offset:int=0) -> dict:
 def run(*args):
     # Update shared links (score.files_ids) using the Box REST API
 
-    # Run example: python manage.py runscript update_shared_links --script-args 365934779636 metadata 123456
-
+    # Run example: python manage.py runscript update_shared_links --script-args 365934779636 metadata <token_id>
+    # Example of file types:
+    # - metadata
+    # - phewas
+    # - phewas_full
+    # - gwas_sumstats
+    # - predictdb
+    # - score_variant_info
+    # - scoring_files
+    # - scoring_files_hm_38
+    # - scoring_files_pgsc_calc
+    # - validation_results
     # Generate dev token:
     # 1 - Go to https://app.box.com/developers/console
     # 2 - Click on App "OmicsPred - stats"

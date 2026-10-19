@@ -4,9 +4,11 @@ import requests
 import sqlite3
 import pathlib
 import zipfile
-import datetime
+from datetime import datetime
 from omicspred.models import *
 from exports.config import scoring_file_from_sqlite_config
+from exports.genetic_score import generate_scoring_file_header
+
 
 # OPGS018874.txt
 
@@ -125,7 +127,8 @@ datasets_info = {
 
 
 datasets_list = datasets_info
-# datasets_list = datasets_info_test
+
+max_rows = 250
 
 rsid_list = {}
 
@@ -187,23 +190,27 @@ def get_score_molecular_trait(score:Score) -> str:
 
 def get_rsid(sqlite_cursor:sqlite3.Cursor) -> sqlite3.Cursor:
     ''' Build and execute the SQL query to list rsID variants which are associated with non rsID variant, from the SQLite database. '''
-    # print(f"SELECT rsid, ref_allele, eff_allele, weight FROM weights WHERE gene='{reported_trait_id}';")
     qcursor = sqlite_cursor.execute("SELECT distinct (rsid) FROM weights WHERE rsid like 'rs%' and gene in (select distinct gene FROM weights WHERE rsid like 'chr%');")
     return qcursor
 
 
 def count_non_rsid(sqlite_cursor:sqlite3.Cursor,reported_trait_id:str) -> sqlite3.Cursor:
     ''' Build and execute the SQL query to list rsID variants which are associated with non rsID variant, from the SQLite database. '''
-    # print(f"SELECT rsid, ref_allele, eff_allele, weight FROM weights WHERE gene='{reported_trait_id}';")
-    qcursor = sqlite_cursor.execute(f"SELECT count(distinct rsid) FROM weights WHERE rsid like 'chr%' and gene='{reported_trait_id}';")
+    qcursor = sqlite_cursor.execute(f"SELECT count(distinct rsid) FROM weights WHERE rsid not like 'rs%' and gene='{reported_trait_id}';")
     return qcursor.fetchone()[0]
 
 
-def get_genetic_score_data(sqlite_cursor:sqlite3.Cursor,reported_trait_id:str) -> sqlite3.Cursor:
+def get_genetic_score_data(sqlite_cursor:sqlite3.Cursor) -> dict:
     ''' Build and execute the SQL query to fetch the genetic score variant information from the SQLite database. '''
-    # print(f"SELECT rsid, ref_allele, eff_allele, weight FROM weights WHERE gene='{reported_trait_id}';")
-    qcursor = sqlite_cursor.execute(f"SELECT rsid, varID, ref_allele, eff_allele, weight FROM weights WHERE gene='{reported_trait_id}';")
-    return qcursor
+    data = {}
+    qcursor = sqlite_cursor.execute(f"SELECT rsid, varID, ref_allele, eff_allele, weight, gene FROM weights order by gene;")
+    for row in qcursor:
+        rsid, varid, ref_allele, eff_allele, weight, gene = row
+        if gene not in data.keys():
+            data[gene] = []
+        new_variant = { 'rsid': rsid, 'varid': varid, 'ref_allele': ref_allele, 'eff_allele': eff_allele, 'weight': weight}
+        data[gene].append(new_variant)
+    return data
 
 
 def check_rsid_is_in_kb(sqlite_kb_conn:sqlite3.Connection,rsid:str) -> sqlite3.Cursor:
@@ -227,19 +234,18 @@ def insert_rsid_coords_to_kb(sqlite_kb_conn:sqlite3.Connection,rsid:str,rsid_coo
     chr_name = rsid_coords['chr_name']
     chr_position = rsid_coords['chr_position']
 
-    # print(f"SQL: INSERT INTO variant_coords (rsid, chr_name, chr_position) VALUES ('{rsid}',{chr_name},{chr_position});")
     sqlite_kb_cursor.execute(f"INSERT OR IGNORE INTO variant_coords (rsid, chr_name, chr_position) VALUES ('{rsid}',{chr_name},{chr_position});")
     sqlite_kb_conn.commit()
     sqlite_kb_cursor.close()
 
 
-def build_zip_file(scores_root_dir:str, dataset_directory:pathlib.Path, dataset_label:str):
+def build_zip_file(scores_root_dir:str, dataset_directory:pathlib.Path, dataset_label:str, final_filename:str):
     ''' Generate the zip file of the directory '''
     zipfile_name = f'{scores_root_dir}/{dataset_label}.zip'
+    zip_final_filename = f'{scores_root_dir}/{final_filename}.zip'
     with zipfile.ZipFile(zipfile_name, 'w') as archive:
         for scoring_file_path in dataset_directory.iterdir():
             archive.write(scoring_file_path, arcname=scoring_file_path.name)
-
     # Check that the zip file exists and is not empty 
     if not os.path.exists(zipfile_name):
         print(f"ERROR: the zipped file '{zipfile_name}' doesn't exist")
@@ -247,6 +253,8 @@ def build_zip_file(scores_root_dir:str, dataset_directory:pathlib.Path, dataset_
     elif os.path.getsize(zipfile_name) == 0:
         print(f"ERROR: the zipped file '{zipfile_name}' is empty")
         exit(1)
+    print("  - Rename zip file")
+    os.rename(zipfile_name,zip_final_filename)
 
 
 def write_header(filehandle:io.TextIOWrapper, score:Score, dataset:Dataset):
@@ -257,6 +265,7 @@ def write_header(filehandle:io.TextIOWrapper, score:Score, dataset:Dataset):
             #trait_type=proteomics
             #measurement_tissue=plasma
             #measurement_platform=Olink Explore
+            #trait_mapped=Calbindin (P05937)
             #trait_reported=Calbindin
             #genome_build=GRCh37
             #variants_number=51
@@ -264,36 +273,8 @@ def write_header(filehandle:io.TextIOWrapper, score:Score, dataset:Dataset):
             #citation=Xu, Y et al. Nature (2023). doi:10.1038/s41586-023-05844-9
             #license=CC BY
     '''
-    # Score ID
-    write_row(filehandle, f'#omicspred_id={score.id}')
-    # Score name
-    if score.name:
-        write_row(filehandle, f'#pgs_name={score.name}')
-    # Omics type
-    write_row(filehandle, f'#trait_type={dataset.platform.platform_master.type.lower()}')
-    # Tissue
-    write_row(filehandle, f'#measurement_tissue={dataset.tissue.label} ({dataset.tissue.id})')
-    # Platform
-    platform = dataset.platform.name
-    if dataset.platform.version:
-        platform += f' - {dataset.platform.version}'
-    write_row(filehandle, f'#measurement_platform={platform}')
-    # Reported molecular trait
-    if score.trait_reported:
-        write_row(filehandle, f'#trait_reported={score.trait_reported} ({score.trait_reported_id})')
-    # Genome build
-    write_row(filehandle, f'#genome_build={score.variants_genomebuild}')
-    # Variants number
-    write_row(filehandle, f'#variants_number={score.variants_number}')
-    # Note/Comment
-    if score.comment:
-        write_row(filehandle, f'#note={score.comment}')
-    # Citation
-    publication = dataset.publication
-    year_publication = publication.pub_year
-    citation = f'{publication.firstauthor} et al. {publication.journal} ({year_publication}). doi:{publication.doi}'
-    write_row(filehandle, f'#citation={citation}')
-    write_row(filehandle, f'#license={score.license}')
+    scoring_file_header = generate_scoring_file_header(score,dataset)
+    write_row(filehandle, scoring_file_header,0)
 
 
 def write_row(filehandle:io.TextIOWrapper,row_content:str,order:int=2):
@@ -321,7 +302,15 @@ def run():
 
     for dataset_label in datasets_list.keys():
         print(f"# Dataset {dataset_label} ({dataset_number}/{datasets_count})")
+        start_ds_time = datetime.now()
+        print(f"  > Started dataset time: {start_ds_time}")
         dataset_number += 1
+
+        sqlite_file = dbs_location+datasets_list[dataset_label]['db']
+        if not os.path.isfile(sqlite_file):
+            print(f"  - No SQLite file '{datasets_list[dataset_label]['db']}' found in '{dbs_location}'. SKIPPED!")
+            continue
+
         # 1 - Create directory
         # Root directory
         if not os.path.isdir(scores_root_dir):
@@ -336,8 +325,11 @@ def run():
         # 2 - Fetch scores and dataset
         print("  - Get dataset")
         dataset = get_dataset(pmid,datasets_list[dataset_label]['tissue_id'],ds_name)
-        
-        sqlite_file = dbs_location+datasets_list[dataset_label]['db']
+        print(f"    -> Dataset {dataset.id}")
+        tissue_label = dataset.tissue.label.replace(' ','_').replace("'","_")
+        # NOTE: Need to change it for each export in the future
+        final_filename = f'{dataset.id}_AGEMdb_{tissue_label}_GTExV8_EUR'
+
         sqlite_connection = sqlite3.connect(sqlite_file)
         sqlite_cursor = sqlite_connection.cursor()
 
@@ -349,7 +341,6 @@ def run():
         # 3 - Fetch list of rsID which need chr_name and chr_position
         sqlite_rsid_kb_file = variant_coords_sqlite_db_file
         sqlite_rsid_kb_connection = sqlite3.connect(sqlite_rsid_kb_file)
-        # sqlite_rsid_kb_cursor = sqlite_rsid_kb_connection.cursor()
 
         q_rsid_cursor = get_rsid(sqlite_cursor)
         max_var_list = 50
@@ -374,9 +365,10 @@ def run():
         # 4 - Extract variant data and build genetic scores files
         print(f"  - Get variant data from SQLite database for each genetic score of the current dataset & build scoring files ({thousandify(len(scores))} scores)")
         count_ens_calls = 0
+        variant_data = get_genetic_score_data(sqlite_cursor)
+        print(f"  - Process and write variant data ")
         for count_scores, score in enumerate(scores,start=1):
-            # if str(count_scores).endswith('0000') or str(count_scores).endswith('5000'):
-            if str(count_scores).endswith('0000'):
+            if str(count_scores).endswith('0000') or str(count_scores).endswith('5000'):
                 print(f"    > {thousandify(count_scores)} scores")
             if str(count_ens_calls).endswith('00'):
                 print(f"    >> {thousandify(count_ens_calls)} Ensembl REST API calls")
@@ -391,52 +383,44 @@ def run():
             # 3a - Generate header content
             write_header(file,score,dataset)
             non_rsid_count = count_non_rsid(sqlite_cursor,score_trait)
-            qcursor = get_genetic_score_data(sqlite_cursor,score_trait)
             # 3b - Generate variants content
+            # Column names
             common_cols='effect_allele\tother_allele\teffect_weight'
+            columns = f'rsID\t{common_cols}'
             if non_rsid_count:
-                write_row(file,f'rsID\tchr_name\tchr_position\t{common_cols}\tvariant_description')
-            else:
-                write_row(file,f'rsID\t{common_cols}')
+                columns += '\tvariant_description'
+            write_row(file,columns,1)
             first_row = True
             count_rows = 0
-            for row in qcursor:
-                rsid, varid, ref_allele, eff_allele, weight = row
+            variant_rows = []
+            count_variant_rows = 0
+            # Data content
+            # for row in qcursor:
+            for row in variant_data[score_trait]:
+                # rsid, varid, ref_allele, eff_allele, weight = row
+                rsid = row['rsid']
+                varid = row['varid']
+                ref_allele = row['ref_allele']
+                eff_allele = row['eff_allele']
+                weight = row['weight']
                 var_desc_content = ''
                 if non_rsid_count:
                     var_desc_content = '\t'
-                    if rsid.startswith('chr'):
-                        variant_id = re.match(r'^chr(\w+)_(\d+)_',rsid)
-                        rsid = f'.\t{variant_id.group(1)}\t{variant_id.group(2)}'
+                    if not rsid.startswith('rs'):
                         var_desc_content += f'variant_id={varid}'
-                    else:
-                        data = fetch_rsid_coords_from_kb(sqlite_rsid_kb_connection, rsid)
-                        # if rsid in rsid_list.keys():
-                        #     data = rsid_list[rsid]
-                        # else:
-                        #     data = ensembl_rest_call(rsid)
-                        #     count_ens_calls =+ 1
-                        #     count_rest_api_calls += 1
-                        #     rsid_list[rsid] = data
-                        if data:
-                            chr_name = data[0]
-                            chr_position = data[1]
-                            rsid = f'{rsid}\t{chr_name}\t{chr_position}'
-                        else:
-                            rsid = f'{rsid}\t\t'
                 row_string = f'{rsid}\t{eff_allele}\t{ref_allele}\t{weight}{var_desc_content}'
-                if first_row:
-                    write_row(file,row_string,0)
-                    first_row = False
-                else:
-                    write_row(file,row_string,1)
                 count_rows += 1
-                # genetic_scores[score_id].append({
-                #     'rsID': rsID,
-                #     'effect_allele': eff_allele,
-                #     'other_allele': ref_allele,
-                #     'effect_weight': weight
-                # })
+                count_variant_rows += 1
+                variant_rows.append(row_string)
+                # Write data
+                if count_variant_rows == max_rows:
+                    variants_rows_to_write = '\n'.join(variant_rows)
+                    write_row(file,variants_rows_to_write,1)
+                    variant_rows = []
+                    count_variant_rows = 0
+
+            if count_variant_rows != 0:
+                write_row(file,'\n'.join(variant_rows),1)
             file.close()
             if count_rows != score.variants_number:
                 print(f"    >> Score {score_id}: discrepancies between the number of variants in metadata ({thousandify(score.variants_number)}) and sqlite ({thousandify(count_rows)}).")
@@ -449,7 +433,7 @@ def run():
         dataset_directory = pathlib.Path(dataset_dir)
         count_files = len(list(dataset_directory.glob('*')))
         if scores_count == count_files:
-            build_zip_file(scores_root_dir, dataset_directory, dataset_label)
+            build_zip_file(scores_root_dir, dataset_directory, dataset_label, final_filename)
         else:
             print(f"    >> Zip file error: the number of Genetic Scores ({thousandify(scores_count)}) differs from the number of scoring files generated ({thousandify(count_files)}) ")
             sys.exit()

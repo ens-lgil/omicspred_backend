@@ -338,6 +338,7 @@ if OP_ON_GAE == 1:
             'https://www.omicspred.org/'
         ]
         CORS_ALLOWED_ORIGIN_REGEXES = [
+            r"^https://.+\.omicspred\.org",
             r"^"+os.environ['CORS_REGEXP']
         ]
     else:
