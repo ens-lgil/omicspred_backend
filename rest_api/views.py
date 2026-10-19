@@ -5,13 +5,13 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler
 from rest_framework.exceptions import Throttled
 from rest_framework.serializers import ValidationError
-from django.db.models import Prefetch, Q, FloatField, Count
-from django.db.models.functions import Cast, Lower
+from django.db.models import Prefetch, Q, Count, QuerySet
+from django.db.models.functions import Lower
 from django.core.exceptions import MultipleObjectsReturned
 from django.conf import settings
 from omicspred.models import *
+from search_es.documents import gene
 from .serializers import *
-
 opgs_prefix = 'OPGS'
 opd_prefix = 'OPD'
 opd_length = 9
@@ -20,25 +20,42 @@ opp_length = 9
 
 
 dataset_publication = ['dataset__publication__id','dataset__publication__title','dataset__publication__doi','dataset__publication__journal','dataset__publication__firstauthor','dataset__publication__pmid','dataset__publication__date_publication']
+score_cols_base = ['id','name','variants_number','trait_reported_id','trait_reported']
+tissue_cols_base = ['dataset__tissue__id','dataset__tissue__label','dataset__tissue__description','dataset__tissue__url','dataset__tissue__type']
 
 only_dict = {
-    'scores_table': ['id','variants_number','trait_reported_id','trait_reported','dataset__id','dataset__name','dataset__platform__id','dataset__platform__name','dataset__publication__id','dataset__publication__pmid','dataset__publication__doi'],
+    'score': [
+        *score_cols_base,
+        'method_name', 'method_params',
+        'dataset__id', 'dataset__name',
+        'dataset__publication_id',*dataset_publication,
+        'dataset__platform__name', 'dataset__platform__version',
+        'dataset__platform__platform_master__type','dataset__platform__platform_master__full_name',
+        'dataset__platform__platform_master__technique',
+        *tissue_cols_base,
+        'variants_interactions', 'variants_genomebuild',
+        'comment', 'license'
+    ],
     'scores_pp_table': [
-        'id','name','variants_number','trait_reported_id','trait_reported','ancestry',
+        *score_cols_base,'ancestry',
         'dataset__id','dataset__name',
-        'dataset__platform__id','dataset__platform__version', *dataset_publication, 'dataset__tissue'],
+        'dataset__platform__version', *dataset_publication, *tissue_cols_base],
     'metabolite': ['id','name','external_id','pathway_group_id','pathway_subgroup_id','pathway_group__id','pathway_group__name','pathway_subgroup__id','pathway_subgroup__name']
 }
 
 defer_dict = {
     'scores_table_defer': ['method_name','method_params','variants_interactions','variants_genomebuild','species','license'],
     'scores_defer': [
-        'dataset__files_ids',
+        'species',
+        'dataset__species',
+        'dataset__files_ids','dataset__license','dataset__method_name',
+        'dataset__phewas_count','dataset__study_url','dataset__training_window',
         'dataset__scores_count','dataset__omics_count','dataset__omics_type',
         'dataset__publication__curation_notes',
         'dataset__publication__curation_status',
         'dataset__publication__date_released',
-        'dataset__publication__authors'],
+        'dataset__publication__authors',
+        'dataset__publication__publication_type',],
     'publication_defer': ['curation_notes','curation_status']
 }
 
@@ -78,23 +95,26 @@ related_dict = {
     'dataset_prefetch': ['samples_training','samples_training__cohorts','samples_validation','samples_validation__cohorts'],#,'dataset_score'],
     'platform_prefetch': ['platform_version','platform_version__platform_dataset'],
     'publication_datasets': Prefetch('datasets',queryset=Dataset.objects.select_related('platform','platform__platform_master','tissue').all().prefetch_related('samples_training','samples_training__cohorts','samples_validation','samples_validation__cohorts').order_by('num')),
-    'score_dataset': ['dataset','dataset__publication','dataset__platform', 'dataset__tissue'],
+    'score_dataset': ['dataset','dataset__tissue','dataset__publication','dataset__platform'],
     'score_dataset_full': [
         'dataset',
+        'dataset__tissue',
         'dataset__publication',
         'dataset__platform',
         'dataset__platform__platform_master',
-        'dataset__tissue'],
+    ],
     'score_search_cohort_training_via_dataset': [
         Prefetch('dataset__samples_training', queryset=Sample.objects.only('id','cohorts').all())
     ],
     'score_search_cohort_validation_via_dataset': [
         Prefetch('dataset__samples_validation', queryset=Sample.objects.only('id','cohorts').all())
     ],
-    'score_phewas_select': ['score','publication'],
+    'score_phewas_select': [
+        'score','publication',
+        'score__dataset','score__dataset__publication','score__dataset__tissue',
+        'score__dataset__platform','score__dataset__platform__platform_master'
+    ],
     'score_phewas': [
-        'score__dataset__publication','score__dataset__tissue',
-        'score__dataset__platform','score__dataset__platform__platform_master',
         'score__genes','score__proteins','score__metabolites','score__transcripts',
         'phenotypes','samples','samples__cohorts'
     ],
@@ -119,6 +139,10 @@ def get_dataset_num(dataset_id:str) -> int:
 
 def get_publication_num(publication_id:str) -> int:
     return get_num_from_id(publication_id, opp_prefix)
+
+
+def get_score_queryset_base():
+    return Score.objects.only(*only_dict['score']).select_related(*related_dict['score_dataset_full']).all().order_by('num')
 
 
 def sort_data_list(request,type,queryset,default_col='num',distinct_col:list=[]):
@@ -170,12 +194,23 @@ def sort_data_list(request,type,queryset,default_col='num',distinct_col:list=[])
 
 
 def filter_data(queryset, filter_params):
+    if filter_params and filter_params is not None:
+        filter_params = filter_params.strip()
+    else:
+        return queryset
+
     filters_data = {}
     for filter in filter_params.split(';'):
         (type,value) = filter.split(':')
         filters_data[type] = value
     filters_types = filters_data.keys()
     query_filter_list = []
+
+    dtype = {
+        'Gene': 'genes',
+        'Protein': 'proteins',
+        'Metabolite': 'metabolites'
+    }
 
     if 'score_id' in filters_types:
         filter_score_id = filters_data['score_id']
@@ -187,12 +222,9 @@ def filter_data(queryset, filter_params):
     if 'mt_id' in filters_types:
         mt_id = filters_data['mt_id']
         mt_type = filters_data['mt_type']
-        if mt_type == 'Gene':
-            query_filter_list.append(Q(genes__external_id__iexact=mt_id) | Q(genes__name__icontains=mt_id))
-        elif mt_type == 'Protein':
-            query_filter_list.append(Q(proteins__external_id__iexact=mt_id) | Q(proteins__name__icontains=mt_id))
-        elif mt_type == 'Metabolite':
-            query_filter_list.append(Q(metabolites__external_id__iexact=mt_id) | Q(metabolites__name__icontains=mt_id))
+        if mt_type in dtype.keys():
+            mt_dtype_model = dtype[mt_type]
+            query_filter_list.append(Q(**{f'{mt_dtype_model}__external_id__iexact':mt_id}) | Q(**{f'{mt_dtype_model}__name__icontains':mt_id}))
     if 'platform' in filters_types:
         query_filter_list.append(Q(dataset__platform__name__exact=filters_data['platform']))
     if 'omics_type' in filters_types:
@@ -219,12 +251,9 @@ def filter_data(queryset, filter_params):
     if 'phewas_mt_id' in filters_types:
         mt_id = filters_data['phewas_mt_id']
         mt_type = filters_data['phewas_mt_type']
-        if mt_type == 'Gene':
-            query_filter_list.append(Q(score__genes__external_id__iexact=mt_id) | Q(score__genes__name__icontains=mt_id))
-        elif mt_type == 'Protein':
-            query_filter_list.append(Q(score__proteins__external_id__iexact=mt_id) | Q(score__proteins__name__icontains=mt_id))
-        elif mt_type == 'Metabolite':
-            query_filter_list.append(Q(score__metabolites__external_id__iexact=mt_id) | Q(score__metabolites__name__icontains=mt_id))
+        if mt_type in dtype.keys():
+            mt_dtype_model = dtype[mt_type]
+            query_filter_list.append(Q(**{f'score_{mt_dtype_model}__external_id__iexact':mt_id}) | Q(**{f'score_{mt_dtype_model}__name__icontains':mt_id}))
     return queryset.filter(reduce(operator.and_,query_filter_list))
 
 
@@ -328,15 +357,7 @@ class RestListCohorts(generics.ListAPIView):
     serializer_class = CohortSerializerExtended
 
     def get_queryset(self):
-        queryset = Cohort.objects.all().prefetch_related('cohorts_sample').order_by('name_short')
-        ## 'filter_ids' parameter: fetch the cohorts from the list of cohort short names
-        # names_list = get_ids_list(self)
-        # # Filter the query depending on the parameters used
-        # if names_list:
-        #     names_list = r'^('+'|'.join(names_list)+')$'
-        #     queryset = queryset.filter(name_short__iregex=names_list)
-
-        return queryset
+        return Cohort.objects.all().prefetch_related('cohorts_sample').order_by('name_short')
 
 class RestCohort(generics.RetrieveAPIView):
     """
@@ -600,10 +621,10 @@ class RestMetabolomics(generics.ListAPIView):
 
         performance_metrics = self.request.query_params.get('include_performance_metrics')
         if str(performance_metrics) == '0':
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['metabolites']).order_by('num')
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['metabolites']).order_by('num')
             self.serializer_class = ScoreMetaboliteSerializer
         else:
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['metabolites'],*related_dict['performance_cohorts']).order_by('num')
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['metabolites'],*related_dict['performance_cohorts']).order_by('num')
 
         ## Filters ##
         # Filter Dataset - FOR PRIVATE USE CASE
@@ -611,43 +632,39 @@ class RestMetabolomics(generics.ListAPIView):
         if dataset and dataset is not None:
             dataset_num = get_dataset_num(dataset)
             queryset = queryset.filter(dataset__num=dataset_num)
-            # queryset = queryset.filter(dataset__id=dataset)
+        # Add other filters if no dataset ID provided
+        else:
+            # Filter by platform name
+            queryset = queryset.filter(dataset__platform__name__iexact=platform)
+
+            # Filter Publication
+            opp_id = self.request.query_params.get('opp_id')
+            if opp_id and opp_id is not None:
+                if opp_id.upper().startswith(opp_prefix):
+                    publication_num = get_publication_num(opp_id)
+                    queryset = queryset.filter(Q(dataset__publication__num=publication_num))
+                # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
+            pmid = self.request.query_params.get('pmid')
+            if pmid and pmid is not None:
+                queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
+
+            # Filter Version
+            version = self.request.query_params.get('version')
+            if version and version is not None:
+                queryset = queryset.filter(dataset__platform__version=version)
 
         # Filter Ancestry - FOR PRIVATE USE CASE
         queryset = filter_ancestry(queryset,self.request)
 
-        # Filter Publication
-        opp_id = self.request.query_params.get('opp_id')
-        if opp_id and opp_id is not None:
-            if opp_id.upper().startswith(opp_prefix):
-                publication_num = get_publication_num(opp_id)
-                queryset = queryset.filter(Q(dataset__publication__num=publication_num))
-            # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
-        pmid = self.request.query_params.get('pmid')
-        if pmid and pmid is not None:
-            queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
-
-        # Filter Version
-        version = self.request.query_params.get('version')
-        if version and version is not None:
-            queryset = queryset.filter(dataset__platform__version=version)
-
         # Filter data - FOR PRIVATE USE CASE
         filter_term = self.request.query_params.get('filter')
         if filter_term and filter_term is not None:
-            # queryset = queryset.filter(Q(id__iexact=filter_term) | Q(dataset__name__icontains=filter_term) |
-            #                            Q(dataset__id__iexact=filter_term) | Q(dataset__name__icontains=filter_term) |
-            #                            Q(trait_reported_id__iexact=filter_term) | Q(trait_reported__icontains=filter_term) |
-            #                            Q(dataset__publication__id__iexact=filter_term) |
-            #                            Q(metabolites__pathway_group__name__iexact=filter_term) | Q(metabolites__pathway_subgroup__name__iexact=filter_term) |
-            #                            Q(metabolites__external_id__iexact=filter_term) | Q(metabolites__name__icontains=filter_term))
             query_filter_list = [Q(id__iexact=filter_term), Q(name__iexact=filter_term), Q(trait_reported_id__iexact=filter_term), Q(trait_reported__icontains=filter_term)]
             if not dataset or dataset == None:
                 query_filter_list.extend([Q(dataset__id__iexact=filter_term), Q(dataset__name__iexact=filter_term)])
             if (not opp_id or opp_id == None) and len(filter_term) == opp_length and filter_term.upper().startswith(opp_prefix):
                 publication_num = get_publication_num(filter_term)
                 query_filter_list.append(Q(dataset__publication__num=publication_num))
-                # query_filter_list.append(Q(dataset__publication__id__iexact=filter_term))
             # Metabolite old pathways
             query_filter_list.extend([Q(metabolites__pathway_group__name__iexact=filter_term), Q(metabolites__pathway_subgroup__name__iexact=filter_term)])
             # Metabolite
@@ -655,9 +672,9 @@ class RestMetabolomics(generics.ListAPIView):
 
             queryset = queryset.filter(reduce(operator.or_,query_filter_list))
 
+        # Table filter data - FOR PRIVATE USE CASE
         table_filter = self.request.query_params.get('table_filter')
-        if table_filter and table_filter is not None:
-            queryset = filter_data(queryset, table_filter)
+        queryset = filter_data(queryset, table_filter)
 
         # Sort data + distinct scores
         queryset = sort_data_list(self.request,'score',queryset,distinct_col=['num'])
@@ -680,35 +697,36 @@ class RestProteomics(generics.ListAPIView):
 
         performance_metrics = self.request.query_params.get('include_performance_metrics')
         if str(performance_metrics) == '0':
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['proteins'],*related_dict['genes'])
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['proteins'],*related_dict['genes'])
             self.serializer_class = ScoreProteinSerializer
         else:
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['proteins'],*related_dict['genes'],*related_dict['performance_cohorts'])
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['proteins'],*related_dict['genes'],*related_dict['performance_cohorts'])
 
         ## Filters ##
-        # Filter Publication
-        opp_id = self.request.query_params.get('opp_id')
-        if opp_id and opp_id is not None:
-            if opp_id.upper().startswith(opp_prefix):
-                publication_num = get_publication_num(opp_id)
-                queryset = queryset.filter(Q(dataset__publication__num=publication_num))
-            # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
-        pmid = self.request.query_params.get('pmid')
-        if pmid and pmid is not None:
-            queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
-
-        # Filter Version
-        version = self.request.query_params.get('version')
-        if version and version is not None:
-            queryset = queryset.filter(dataset__platform__version=version)
-
-
         # Filter Dataset - FOR PRIVATE USE CASE
         dataset = self.request.query_params.get('dataset')
         if dataset and dataset is not None:
             dataset_num = get_dataset_num(dataset)
             queryset = queryset.filter(dataset__num=dataset_num)
-            # queryset = queryset.filter(dataset__id=dataset)
+        else:
+            # Filter by platform name
+            queryset = queryset.filter(dataset__platform__name__iexact=platform)
+
+            # Filter Publication
+            opp_id = self.request.query_params.get('opp_id')
+            if opp_id and opp_id is not None:
+                if opp_id.upper().startswith(opp_prefix):
+                    publication_num = get_publication_num(opp_id)
+                    queryset = queryset.filter(Q(dataset__publication__num=publication_num))
+                # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
+            pmid = self.request.query_params.get('pmid')
+            if pmid and pmid is not None:
+                queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
+
+            # Filter Version
+            version = self.request.query_params.get('version')
+            if version and version is not None:
+                queryset = queryset.filter(dataset__platform__version=version)
 
         # Filter platform versions - FOR PRIVATE USE CASE
         platform_versions = self.request.query_params.get('versions')
@@ -722,11 +740,6 @@ class RestProteomics(generics.ListAPIView):
         # Filter data - FOR PRIVATE USE CASE
         filter_term = self.request.query_params.get('filter')
         if filter_term and filter_term is not None:
-            # queryset = queryset.filter(Q(id__iexact=filter_term) |
-            #                            Q(dataset__id__iexact=filter_term) | Q(dataset__name__icontains=filter_term) |
-            #                            Q(dataset__platform__version__icontains=filter_term) | Q(dataset__publication__id__iexact=filter_term) |
-            #                            Q(proteins__external_id__iexact=filter_term) | Q(proteins__name__icontains=filter_term) |
-            #                            Q(genes__external_id__iexact=filter_term) | Q(genes__name__iexact=filter_term))
             query_filter_list = [Q(id__iexact=filter_term), Q(name__iexact=filter_term)]
             if not dataset or dataset == None:
                 query_filter_list.extend([Q(dataset__id__iexact=filter_term), Q(dataset__name__iexact=filter_term)])
@@ -742,9 +755,9 @@ class RestProteomics(generics.ListAPIView):
             query_filter_list.extend([Q(genes__external_id__iexact=filter_term), Q(genes__name__iexact=filter_term)])
             queryset = queryset.filter(reduce(operator.or_,query_filter_list))
 
+        # Table filter data - FOR PRIVATE USE CASE
         table_filter = self.request.query_params.get('table_filter')
-        if table_filter and table_filter is not None:
-            queryset = filter_data(queryset, table_filter)
+        queryset = filter_data(queryset, table_filter)
 
         # Sort data + distinct scores
         # queryset = sort_data_list(self.request,'score',queryset)
@@ -768,38 +781,41 @@ class RestTranscriptomics(generics.ListAPIView):
 
         performance_metrics = self.request.query_params.get('include_performance_metrics')
         if str(performance_metrics) == '0':
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['genes'])
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['genes'])
             self.serializer_class = ScoreTranscriptSerializer
         else:
-            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).filter(dataset__platform__name__iexact=platform).prefetch_related(*related_dict['genes'],*related_dict['performance_cohorts'])
+            queryset = Score.objects.only(*only_dict['scores_pp_table']).select_related(*related_dict['score_dataset']).all().prefetch_related(*related_dict['genes'],*related_dict['performance_cohorts'])
 
+        ## Filters ##
         # Filter Dataset - FOR PRIVATE USE CASE
         dataset = self.request.query_params.get('dataset')
         if dataset and dataset is not None:
             dataset_num = get_dataset_num(dataset)
             queryset = queryset.filter(dataset__num=dataset_num)
-            # queryset = queryset.filter(dataset__id=dataset)
+        # Add other filters if no dataset ID provided
+        else:
+            # Filter by platform name
+            queryset = queryset.filter(dataset__platform__name__iexact=platform)
 
+            # Filter Publication
+            opp_id = self.request.query_params.get('opp_id')
+            if opp_id and opp_id is not None:
+                if opp_id.upper().startswith(opp_prefix):
+                    publication_num = get_publication_num(opp_id)
+                    queryset = queryset.filter(Q(dataset__publication__num=publication_num))
+                # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
+            pmid = self.request.query_params.get('pmid')
+            if pmid and pmid is not None:
+                queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
+
+            # Filter Version
+            version = self.request.query_params.get('version')
+            if version and version is not None:
+                queryset = queryset.filter(dataset__platform__version=version)
+    
         # Filter Ancestry - FOR PRIVATE USE CASE
         queryset = filter_ancestry(queryset,self.request)
 
-        # Filter Publication
-        opp_id = self.request.query_params.get('opp_id')
-        if opp_id and opp_id is not None:
-            if opp_id.upper().startswith(opp_prefix):
-                publication_num = get_publication_num(opp_id)
-                queryset = queryset.filter(Q(dataset__publication__num=publication_num))
-            # queryset = queryset.filter(Q(dataset__publication__id__iexact=opp_id))
-        pmid = self.request.query_params.get('pmid')
-        if pmid and pmid is not None:
-            queryset = queryset.filter(Q(dataset__publication__pmid=pmid) | Q(dataset__publication__doi__iexact=pmid))
-
-        # Filter Version
-        version = self.request.query_params.get('version')
-        if version and version is not None:
-            queryset = queryset.filter(dataset__platform__version=version)
-
-        ## Filters ##
         # Filter data - FOR PRIVATE USE CASE
         filter_term = self.request.query_params.get('filter')
         if filter_term and filter_term is not None:
@@ -814,12 +830,13 @@ class RestTranscriptomics(generics.ListAPIView):
             query_filter_list.extend([Q(genes__external_id__iexact=filter_term), Q(genes__name__iexact=filter_term)])
             queryset = queryset.filter(reduce(operator.or_,query_filter_list))
 
-        table_filter = self.request.query_params.get('table_filter')
-        if table_filter and table_filter is not None:
-            queryset = filter_data(queryset, table_filter)
+        # Table filter data - FOR PRIVATE USE CASE
+        # table_filter = self.request.query_params.get('table_filter')
+        # queryset = filter_data(queryset, table_filter)
 
         # Sort data + distinct scores
-        queryset = sort_data_list(self.request,'score',queryset,distinct_col=['num'])
+        # queryset = sort_data_list(self.request,'score',queryset,distinct_col=['num'])
+        queryset = sort_data_list(self.request,'score',queryset)
         # # Distinct scores
         # queryset = queryset.distinct('num')
 
@@ -1202,25 +1219,28 @@ class RestListScores(generics.ListAPIView):
             self.serializer_class = ScoreSerializer
         else:
             self.serializer_class = ScoreLightSerializer
-        queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).all().prefetch_related(*related_dict['molecular_traits']).order_by('num')
-
+        # queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).all().prefetch_related(*related_dict['molecular_traits']).order_by('num')
+        queryset = get_score_queryset_base()
+        queryset = queryset.prefetch_related(*related_dict['molecular_traits']).order_by('num')
         # Filter by list of Score IDs
         ids_list = get_ids_list(self)
         if ids_list:
             queryset = queryset.filter(id__in=ids_list)
 
-        # Filter data - FOR PRIVATE USE CASE
-        filter_term = self.request.query_params.get('filter')
-        if filter_term and filter_term is not None:
-            queryset = queryset.filter(Q(id__iexact=filter_term) |
-                                       Q(genes__external_id__iexact=filter_term) | Q(genes__name__iexact=filter_term) |
-                                       Q(proteins__external_id__iexact=filter_term) | Q(proteins__name__icontains=filter_term) |
-                                       Q(metabolites__external_id__iexact=filter_term) | Q(metabolites__name__icontains=filter_term) |
-                                       Q(dataset__platform__name__iexact=filter_term) | Q(dataset__platform__platform_master__type__iexact=filter_term) |
-                                       Q(dataset__publication__id__iexact=filter_term) | Q(dataset__publication__firstauthor__iexact=filter_term))
+        # # Filter data - FOR PRIVATE USE CASE
+        # filter_term = self.request.query_params.get('filter')
+        # if filter_term and filter_term is not None:
+        #     filter_term = filter_term.strip()
+        #     queryset = queryset.filter(Q(id__iexact=filter_term) |
+        #                                Q(genes__external_id__iexact=filter_term) | Q(genes__name__iexact=filter_term) |
+        #                                Q(proteins__external_id__iexact=filter_term) | Q(proteins__name__icontains=filter_term) |
+        #                                Q(metabolites__external_id__iexact=filter_term) | Q(metabolites__name__icontains=filter_term) |
+        #                                Q(dataset__platform__name__iexact=filter_term) | Q(dataset__platform__platform_master__type__iexact=filter_term) |
+        #                                Q(dataset__publication__id__iexact=filter_term) | Q(dataset__publication__firstauthor__iexact=filter_term))
+
+        # Table filter data - FOR PRIVATE USE CASE
         table_filter = self.request.query_params.get('table_filter')
-        if table_filter and table_filter is not None:
-            queryset = filter_data(queryset, table_filter)
+        queryset = filter_data(queryset, table_filter)
         # Sort data
         queryset = sort_data_list(self.request,'score',queryset)
         return queryset
@@ -1235,11 +1255,14 @@ class RestScore(generics.RetrieveAPIView):
     def get(self, request, opgs_id):
         opgs_id = opgs_id.upper()
         include_pathway = self.request.query_params.get('include_pathway')
+        queryset = get_score_queryset_base()
         try:
             if include_pathway and str(include_pathway)=='1':
-                queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).prefetch_related('genes__pathways','genes__pathways__superpathways','metabolites__pathways','metabolites__pathways__superpathways').get(id=opgs_id)
+                queryset = queryset.prefetch_related('genes__pathways','genes__pathways__superpathways','metabolites__pathways','metabolites__pathways__superpathways').get(id=opgs_id)
+                # queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).prefetch_related('genes__pathways','genes__pathways__superpathways','metabolites__pathways','metabolites__pathways__superpathways').get(id=opgs_id)
             else:
-                queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).get(id=opgs_id)
+                queryset = queryset.get(id=opgs_id)
+                # queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).get(id=opgs_id)
         except Score.DoesNotExist:
             queryset = None
         if include_pathway and str(include_pathway)=='1':
@@ -1417,6 +1440,7 @@ class RestScoreSearch(generics.ListAPIView):
 
             queryset = queryset.filter(reduce(operator.or_,query_filter_list))
 
+        # Table filter data - FOR PRIVATE USE CASE
         table_filter = self.request.query_params.get('table_filter')
         if table_filter and table_filter is not None:
             queryset = filter_data(queryset, table_filter)
@@ -1443,9 +1467,9 @@ class RestListScorePheWAS(generics.ListAPIView):
     def get_queryset(self):
         queryset = ScorePheWAS.objects.select_related(*related_dict['score_phewas_select']).all().prefetch_related(*related_dict['score_phewas']).order_by('score__id','trait_reported')
 
+        # Table filter data - FOR PRIVATE USE CASE
         table_filter = self.request.query_params.get('table_filter')
-        if table_filter and table_filter is not None:
-            queryset = filter_data(queryset, table_filter)
+        queryset = filter_data(queryset, table_filter)
 
         # Filter data - FOR PRIVATE USE CASE
         filter_term = self.request.query_params.get('filter')

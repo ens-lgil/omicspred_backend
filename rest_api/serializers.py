@@ -7,11 +7,18 @@ from plot.models import *
 scores_count = ('scores_count',)
 
 
+def get_description_data(obj):
+    if (obj.description):
+        return obj.description_list
+    return []
+
+
 ###################
 #### OmicsPred ####
 ###################
 
 #### External Source ####
+
 class ExternalSourceSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -22,11 +29,11 @@ class ExternalSourceSerializer(serializers.ModelSerializer):
 
 
 #### Cohort ####
+
 class CohortSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Cohort
-        # meta_fields = ('name_short', 'name_full', 'name_others', 'url')
         meta_fields = ('name_short', 'name_full', 'description', 'url')
         fields = meta_fields
         read_only_fields = meta_fields
@@ -45,6 +52,7 @@ class CohortSerializerExtended(CohortSerializer):
 
 
 #### Sample ####
+
 class SampleSerializer(serializers.ModelSerializer):
     cohorts = CohortSerializer(many=True, read_only=True)
     ancestry_assignment = serializers.SerializerMethodField('get_ancestry_assignment_label')
@@ -63,6 +71,7 @@ class SampleSerializer(serializers.ModelSerializer):
 
 
 #### Tissue ####
+
 class TissueSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tissue
@@ -88,6 +97,7 @@ class PublicationSerializer(serializers.ModelSerializer):
 
 
 #### Platform ####
+
 class PlatformMasterSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlatformMaster
@@ -130,6 +140,7 @@ class PlatformExtendedSerializer(PlatformSerializer):
 
 
 #### Dataset ####
+
 class DatasetLightSerializer(serializers.ModelSerializer):
     platform = PlatformSerializer(many=False, read_only=True)
     tissue = TissueSerializer(many=False, read_only=True)
@@ -140,7 +151,7 @@ class DatasetLightSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dataset
         meta_fields = ('id', 'name', 'platform', 'scores_count', 'omics_count', 'phewas_count', 'omics_type', 'method_name',
-                       'training_window', 'tissue', 'samples_training', 'samples_validation','scoring_files_urls')
+                       'study_url', 'training_window', 'tissue', 'samples_training', 'samples_validation','scoring_files_urls')
         fields = meta_fields
         read_only_fields = meta_fields
 
@@ -172,6 +183,7 @@ class DatasetPheWASPublicationSerializer(DatasetSerializer):
 
 
 #### Publication - Extended (with Platform) ####
+
 class PublicationExtendedSerializer(PublicationSerializer):
     date_release = serializers.SerializerMethodField('get_date_released')
     datasets = DatasetLightSerializer(many=True, read_only=True)
@@ -186,6 +198,7 @@ class PublicationExtendedSerializer(PublicationSerializer):
 
 
 #### Pathway ####
+
 class PathwayOldSerializer(serializers.ModelSerializer):
     class Meta:
         model = PathwayOld
@@ -219,6 +232,7 @@ class PathwaySerializer(serializers.ModelSerializer):
 
 
 #### Gene ####
+
 class GeneBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Gene
@@ -237,9 +251,7 @@ class GeneSerializerMinimal(GeneBaseSerializer):
         read_only_fields = GeneBaseSerializer.Meta.read_only_fields + meta_fields
 
     def get_descriptions(self, obj):
-        if (obj.description):
-            return obj.description_list
-        return []
+        return get_description_data(obj)
 
 
 class GeneSerializer(GeneSerializerMinimal):
@@ -280,6 +292,7 @@ class GeneSerializerExtendedScoresCount(GeneSerializerExtended):
 
 
 #### Transcript ####
+
 class TranscriptBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model =  Transcript
@@ -297,6 +310,7 @@ class TranscriptSerializer(TranscriptBaseSerializer):
 
 
 #### Protein ####
+
 class ProteinBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Protein
@@ -320,9 +334,7 @@ class ProteinSerializer(ProteinBaseSerializer):
         return []
 
     def get_descriptions(self, obj):
-        if (obj.description):
-            return obj.description_list
-        return []
+        return get_description_data(obj)
 
 
 class ProteinSerializerExtended(ProteinSerializer):
@@ -344,9 +356,7 @@ class ProteinSerializerScoresCount(ProteinBaseSerializer):
         read_only_fields = ProteinBaseSerializer.Meta.read_only_fields + meta_fields
 
     def get_descriptions(self, obj):
-        if (obj.description):
-            return obj.description_list
-        return []
+        return get_description_data(obj)
 
 
 class ProteinSerializerExtendedScoresCount(ProteinSerializerExtended):
@@ -357,6 +367,7 @@ class ProteinSerializerExtendedScoresCount(ProteinSerializerExtended):
 
 
 #### Metabolite ####
+
 class MetaboliteBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Metabolite
@@ -415,9 +426,7 @@ class MetaboliteSerializerExtended(MetaboliteSerializer):
         read_only_fields = MetaboliteSerializer.Meta.read_only_fields + meta_fields
 
     def get_descriptions(self, obj):
-        if (obj.description):
-            return obj.description_list
-        return []
+        return get_description_data(obj)
 
 
 class MetaboliteSerializerScoresCount(MetaboliteBaseSerializer):
@@ -428,9 +437,7 @@ class MetaboliteSerializerScoresCount(MetaboliteBaseSerializer):
         read_only_fields = MetaboliteBaseSerializer.Meta.read_only_fields + meta_fields
 
     def get_descriptions(self, obj):
-        if (obj.description):
-            return obj.description_list
-        return []
+        return get_description_data(obj)
 
 class MetaboliteSerializerExtendedScoresCount(MetaboliteSerializerExtended):
     class Meta(MetaboliteSerializerExtended.Meta):
@@ -440,6 +447,7 @@ class MetaboliteSerializerExtendedScoresCount(MetaboliteSerializerExtended):
 
 
 #### Pathway - Extended (with genes, proteins and metabolites) ####
+
 class PathwaySerializerExtended(PathwaySerializer):
     # superpathways = SuperPathwaySerializer(many=True, read_only=True)
     genes = GeneSerializerScoresCount(source='pathway_genes', many=True, read_only=True)
@@ -548,6 +556,7 @@ class ScorePlotSerializer(serializers.ModelSerializer):
 
 
 #### Metric ####
+
 class MetricSerializer(serializers.ModelSerializer):
     class Meta:
         model = Metric
@@ -557,6 +566,7 @@ class MetricSerializer(serializers.ModelSerializer):
 
 
 #### Performance ####
+
 class PerformanceLightSerializer(serializers.ModelSerializer):
     evaluation_type = serializers.SerializerMethodField('get_eval_type_label')
 
@@ -605,6 +615,7 @@ class PerformanceSerializer(serializers.ModelSerializer):
 
 
 #### Score - Performance ####
+
 class ScorePerformanceSerializer(ScoreSerializer):
     score_performance = PerformanceLightSerializer(many=True, read_only=True)
 

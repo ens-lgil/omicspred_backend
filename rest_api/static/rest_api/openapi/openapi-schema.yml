@@ -3,7 +3,7 @@ servers:
   - url: https://rest.omicspred.org
 info:
   title: 'OmicsPred REST API'
-  version: '1.2.1'
+  version: '1.2.2'
   description: |
     Programmatic access to the OmicsPred metadata.
 
@@ -68,6 +68,9 @@ info:
 
     <a id="changelog">REST API version changelog</a>
     <div id="content_changelog">
+
+      * <span class="badge badge-pill">1.2.2</span> - October 2026:
+        * New field **study_url** in the Dataset schemas (`/api/dataset/` endpoints), containing the URL of the study.
 
       * <span class="badge badge-pill">1.2.1</span> - July 2026:
         * New endpoint `/api/external_source/all` (endpoint group 'Other') to retrieve information from the external sources used in OmicsPred.
@@ -298,6 +301,10 @@ components:
           type: string
           description: "The name or description of the method or computational algorithm used to develop the PGS."
           example: "Bayesian Ridge regression"
+        study_url:
+          type: string
+          description: "The URL of the study, when available."
+          example: "https://agemdb-eur.manchester.ac.uk/"
         training_window:
           type: string
           description: "The type of training window used for the variants"
