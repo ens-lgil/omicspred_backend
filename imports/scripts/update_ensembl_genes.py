@@ -5,7 +5,8 @@ from omicspred.models import Gene, Transcript
 
 workdir = '/Users/lg10/Workspace/datafiles/OmicsPred'
 # GTF file: https://ftp.ensembl.org/pub/current_gtf/homo_sapiens/
-input_file = f'{workdir}/Homo_sapiens.GRCh38.113.gtf'
+# input_file = f'{workdir}/Homo_sapiens.GRCh38.113.gtf'
+input_file = f'{workdir}/Homo_sapiens.GRCh38.116.gtf'
 # BioMart export (attributes 'Gene stable ID', 'Gene description' | no chromosome filtering)
 ensg_description_file = f'{workdir}/ensg_description.txt'
 
@@ -38,11 +39,11 @@ def ens_rest_call(gene_name):
                 ensg = resp['id']
         if ensg and count_ens == 1:
             stable_id = ensg
-            print(f"  ]] {gene_name}: Stable ID found => {stable_id}")
+            print(f"  >> {gene_name}: Stable ID found => {stable_id}")
         elif count_ens > 1:
-            print(f"  ]] {gene_name}: Too many stable IDs found ({count_ens})")
+            print(f"  >> {gene_name}: Too many stable IDs found ({count_ens})")
         elif ensg == None:
-            print(f"  ]] {gene_name}: no Ensembl stable IDs found")
+            print(f"  >> {gene_name}: no Ensembl stable IDs found")
     else:
         print(f"  ]] {gene_name}: no found")
     return stable_id
@@ -137,6 +138,7 @@ def update_genes(ensg_stable_ids,ensg_hgncs,count_ensg_id_retrieved,count_hgnc_i
                 count_hgnc_id_retrieved += 1
                 is_updated = True
             else:
+                # print(f"  !! Missing data for gene '{op_gene.name}'")
                 gene_stable_id = ens_rest_call(op_gene.name)
                 if gene_stable_id:
                     op_gene.external_id = gene_stable_id

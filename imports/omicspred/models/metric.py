@@ -1,3 +1,4 @@
+import re
 from django.db import IntegrityError, transaction
 from imports.generic_model import GenericData
 from omicspred.models import Metric
@@ -8,7 +9,9 @@ class MetricData(GenericData):
     type_choices = {
         'R2' : "Pearson's correlation",
         'Rho': "Spearman's rank correlation",
-        'MatchingRate': "Variant Match Rate"
+        'MatchingRate': "Variant Match Rate",
+        'MSE': "Mean squared error",
+        'AdjustedMSE': "Adjusted mean squared error"
     }
 
     # Metric method
@@ -19,7 +22,9 @@ class MetricData(GenericData):
         'Cindex': ('Concordance Statistic', 'C-index'),
         'R2': ('Proportion of the variance explained', 'R2'),
         'Rho': ('Spearman correlation coefficient', 'Rho'),
-        'MatchingRate': ('Variant Match Rate', 'Match Rate')
+        'MatchingRate': ('Variant Match Rate', 'Match Rate'),
+        'MSE': ("Mean squared error", "MSE"),
+        'AdjustedMSE': ("Adjusted mean squared error", 'Adjusted MSE')
     }
 
 
@@ -53,12 +58,17 @@ class MetricData(GenericData):
         # Limit to 5 decimals, e.g. 0.111222333 -> 0.11122
         if len(str(float(value))) > 7: # first digit + dot + at least 6 decimals
             if 'e' in str(value):
-                value = "{:.5e}".format(value)
-            elif value < 0.001:
-                value = "{:.5e}".format(value)
-            else:
-                value = "{:.5f}".format(value)
+                value = "{:.5e}".format(float(value))
+            elif re.search(r'^\d\.\d+$',str(value)):
                 value = float(value)
+                if value < 0.001:
+                    value = "{:.5e}".format(value)
+                else:
+                    value = "{:.5f}".format(value)
+                    value = float(value)
+            # else:
+            #     value = "{:.5f}".format(value)
+            #     value = float(value)
         return value
 
     # def set_names(self):

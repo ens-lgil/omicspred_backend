@@ -41,8 +41,8 @@ def format_percentage(percent):
 
 def run():
     count = 1
-    scores_phewas = ScorePheWAS.objects.filter(dataset_id=209).prefetch_related('samples').distinct()
-    # scores_phewas = ScorePheWAS.objects.all().prefetch_related('samples').distinct()
+    # scores_phewas = ScorePheWAS.objects.filter(dataset_id=208).prefetch_related('samples').distinct()
+    scores_phewas = ScorePheWAS.objects.all().prefetch_related('samples').distinct()
     # scores = Score.objects.all().prefetch_related('score_performance','score_performance__sample')
     multi_anc = 'MAO'
 
