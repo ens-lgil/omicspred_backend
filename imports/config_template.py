@@ -15,7 +15,7 @@ platform_types = {
     'Somalogic': 'Proteomics',
 }
 
-# PhWAS imports
+# PheWAS imports
 phewas_publication_id = '<publication_id>' # e.g. 1
 phewas_method = '<method_description>' # e.g. S-PrediXcan
 phewas_csv_dir = '<path_to_phewas_files_directory>'

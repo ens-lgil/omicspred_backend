@@ -1,6 +1,7 @@
 import os
 
 dataset_selection = { 'publication_id': 1 }
+use_dataset_name = False
 
 current_dir = os.getcwd()
 sqlite_exports_dir = current_dir+'/exports/tests/datas'

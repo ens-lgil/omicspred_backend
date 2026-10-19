@@ -334,6 +334,7 @@ class Dataset(models.Model):
     omics_count = models.IntegerField('Omics Entities count', null=False)
     omics_type = models.CharField('Omics type', max_length=50)
     method_name = models.TextField('Score Development Method')
+    study_url = models.CharField('Study URL', max_length=50, null=True)
     # Cis-variant, Trans-variants
     TRAINING_WINDOW_CHOICES = [
         ('',''),
@@ -345,7 +346,7 @@ class Dataset(models.Model):
         default='',
         db_index=True
     )
-    tissue = models.ForeignKey(Tissue, on_delete=models.PROTECT, related_name='tissue_dataset', verbose_name='Tissue', null=True) # Tissue trait defining the sampled tissue
+    tissue = models.ForeignKey(Tissue, on_delete=models.PROTECT, related_name='tissue_dataset', verbose_name='Tissue') # Tissue trait defining the sampled tissue
     scores_count = models.IntegerField('Associated Scores count', null=False)
     phewas_count = models.IntegerField('Associated PheWAS data count', default=0)
     # cohorts = models.ManyToManyField(Cohort, verbose_name='Cohort(s)', related_name='cohort_platform')

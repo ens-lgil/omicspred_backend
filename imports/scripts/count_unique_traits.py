@@ -1,6 +1,8 @@
 from omicspred.models import *
 
 
+label = 'unique traits'
+
 def run():
 
     data = {}
@@ -57,7 +59,8 @@ def run():
             if str(count_scores).endswith('00000'):
                 print(f'  - {count_scores}/{total_scores} scores processed')
         print(f'  - {count_scores}/{total_scores} scores processed')
-    print(f"\n=> Total unique traits: {len(data.keys())}")
+    unique_trait_count = len(data.keys())
+    print(f"\n=> Total unique traits: {unique_trait_count}")
 
     print(f">> Write into file ...")
     filename = 'unique_traits.txt'
@@ -72,3 +75,10 @@ def run():
                 print(f"!! Error writing to file {filename}")
     except (FileNotFoundError, PermissionError, OSError):
         print(f"!! Error opening file {filename}")
+
+    try:
+        info = Info.objects.get(name=label)
+        info.value = unique_trait_count
+    except Info.DoesNotExist:
+        info = Info(name=label,value=unique_trait_count)
+    info.save()

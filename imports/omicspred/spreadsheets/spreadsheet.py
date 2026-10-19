@@ -142,8 +142,7 @@ class PublicationSpreadSheet(SpreadSheet):
             # m, f = self.get_model_field_from_schema(col,self.spreadsheet_schema)
             m, f  = self.spreadsheet_schema.loc[col][:2]
             if f == 'pmid':
-                pmid = pub_info[col]
-                # break
+                pmid = int(pub_info[col])
             elif f in ['doi','journal','date_publication','firstauthor']:
                 data[f] = pub_info[col]
         pub_data = PublicationData(pmid,data)
@@ -282,15 +281,22 @@ class ScoreSpreadSheet(SpreadSheet):
             dataset_tag_suffix = tissue.id
             dataset_name_suffix = tissue.label
 
-            ############ TEMP (for ARIC imports) ############ TODO -> to remove
-            if score_name.endswith('_AA') or score_name.endswith('_EA'):
+            # ############ TEMP (for ARIC imports) ############ TODO -> to remove
+            # if score_name.endswith('_AA') or score_name.endswith('_EA'):
+            #     score_components = score_name.rsplit('_', 1)
+            #     dataset_tag_suffix = score_components[1]
+            #     dataset_name_suffix = score_components[1]
+            # #################################################
+
+            if score_name.endswith('_AFR') or score_name.endswith('_EUR'):
                 score_components = score_name.rsplit('_', 1)
-                dataset_tag_suffix = score_components[1]
-                dataset_name_suffix = score_components[1]
+                dataset_tag_suffix += '_'+score_components[1]
+                dataset_name_suffix += ' - '+score_components[1]
             #################################################
 
-            publication_tag = self.publication.pmid if self.publication.pmid else self.publication.firstauthor
-            dataset_tag = f'{platform.name}_{platform_version}_{publication_tag}_{dataset_tag_suffix}'
+            # publication_tag = self.publication.pmid if self.publication.pmid else self.publication.firstauthor
+            # dataset_tag = f'{platform.name}_{platform_version}_{publication_tag}_{dataset_tag_suffix}'
+            dataset_tag = f'{platform.name}_{platform_version}_{dataset_tag_suffix}'
             if dataset_tag in self.datasets.keys():
                 dataset = self.datasets[dataset_tag]
                 dataset.add_score()
@@ -327,7 +333,9 @@ class SamplePerformanceSpreadSheet(SpreadSheet):
             'r score': 'R2',
             'Rho score': 'Rho',
             "Pearson's correlation__p-value": 'R2',
-            "Spearman's rank correlation__p-value": 'Rho'
+            "Spearman's rank correlation__p-value": 'Rho',
+            "mse": 'MSE',
+            "adjusted_mse": 'AdjustedMSE'
         }
         metric_types_keys = metric_types.keys()
         # Loop throught the rows (i.e. score)
@@ -376,9 +384,18 @@ class SamplePerformanceSpreadSheet(SpreadSheet):
                         if f == 'estimate':
                             col_len = len(col)
                             col_label = col[2] if col_len >= 3 else col[1]
-                            if col_label in metric_types_keys:
-                                metric_type = metric_types[col_label]
-                                metric_data[metric_type] = { 'name': metric_type, f : val }
+                            # Extra metrics
+                            if '=' in str(val):
+                                for additional_metric in str(val).split(';'):
+                                    metric_name, metric_value = additional_metric.split('=')
+                                    if metric_value and str(metric_value) != '':
+                                        metric_type = metric_types[metric_name]
+                                        metric_data[metric_type] = { 'name': metric_type, f : metric_value }
+                            # Common metrics
+                            elif col_label in metric_types_keys:
+                                if val and str(val) != '':
+                                    metric_type = metric_types[col_label]
+                                    metric_data[metric_type] = { 'name': metric_type, f : val }
                         elif f == 'pvalue':
                             # Use metric_type from the estimate in the previous loop iteration
                             metric_data[metric_type][f] = val

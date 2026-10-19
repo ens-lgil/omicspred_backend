@@ -5,6 +5,7 @@ dataset_selection = { '<dataset_column>': '<dataset_value(s)>' }
 # 'num': 208
 # 'id__in': ['OPD000056','OPD000105','OPD000154','OPD000203']
 # 'num__in': ['56','105','154','203']
+use_dataset_name = True
 
 # Metadata exports
 metadata_exports_dir = '<path_to_directory>'

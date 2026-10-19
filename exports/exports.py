@@ -17,6 +17,7 @@ fields_to_export = {
             {'name': 'name', 'label': 'Dataset Name'},
             {'name': 'omics_type', 'label': 'Omics Type' },
             {'name': 'method_name', 'label': 'Development Method'},
+            {'name': 'study_url', 'label': 'Study URL'},
             {'name': 'training_window', 'label': 'Training Window'},
             {'name': 'scores_count', 'label': 'Scores Count'},
             {'name': 'phewas_count', 'label': 'PheWAS Count'},
