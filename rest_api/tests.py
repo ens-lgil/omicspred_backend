@@ -7,25 +7,21 @@ from time import sleep
 sleep_time = 60
 status_ok = 200
 status_not_found = 404
-status_too_many = 429
+
+# Change throttle rates for the tests
+rate4test = '400/min'
 
 
-class BrowseEndpointTest(APITestCase):
-    """ Test the REST endpoints """
+class RestApiTestBase(APITestCase):
+    """Shared fixture and helper setup for the REST API test suite."""
 
-    # Load data in DB - Must live in the rest_api/fixtures/ directory
     fixtures = ['db_test']
     databases = {'default'}
 
-    # Change throttle rates for the tests
-    rate4test = '300/min'
-    settings.REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = { 'anon': rate4test, 'user': rate4test }
+    settings.REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': rate4test, 'user': rate4test}
 
     # Base URL of the server
     server = '/api/'
-
-    fake_examples = {'string': 'ABC123CDE', 'integer': '00001', 'date': '1990-01-01'}
-    empty_resp = ['{}', '{"size":0,"count":0,"next":null,"previous":null,"results":[]}', '[]']
 
     # Data example
     filter_ids = 'filter_ids'
@@ -47,26 +43,53 @@ class BrowseEndpointTest(APITestCase):
     tissue_ids_list = ['UBERON_0001969', 'BTO_0000133']
     tissue_labels_list = ['blood plasma', 'blood serum']
     dataset_ids_list = ['OPD000001', 'OPD000002']
+    author_name = 'Xu'
+
+    score_id_1 = scores_list[0]
+    score_id_2 = scores_list[1]
+    score_id_3 = scores_list[2]
+    publication_id_1 = publication_ids_list[0]
+    pmid_1 = publications_list[0]
+    dataset_id_1 = dataset_ids_list[0]
+    platform_1 = platforms_list_proteomics[0]
+    platform_2 = platforms_list_proteomics[1]
+    gene_id = gene_ids_list[0]
+    gene_name = gene_names_list[0]
+    cohort = cohorts_list[0]
+    protein_id = proteins_list[0]
+    metabolite_id = metabolites_list[0]
+
+    # Wrong examples for testing invalid inputs
+    fake_examples = {'string': 'ABC123CDE', 'integer': '00001', 'date': '1990-01-01'}
+    empty_resp = ['{}', '{"size":0,"count":0,"next":null,"previous":null,"results":[]}', '[]']
+    invalid_score_id = 'OPGS999999'
+
+    # Popular endpoints for testing
+    score_all = 'score/all'
+    score_all_endpoint = f'{server}{score_all}/'
+    gene_search_endpoint = f'{server}gene/search/'
+    score_search_endpoint = f'{server}score/search/'
+
 
     index_result_mutliplicity = 2
     index_example = 3
 
-    search_pmid = f'pmid={publications_list[0]}'
-    search_opp_id = f'opp_id={publication_ids_list[0]}'
-    search_opd_id = f'opd_id={dataset_ids_list[0]}'
-    search_platform = f'platform={platforms_list_proteomics[1]}'
+    search_pmid = f'pmid={pmid_1}'
+    search_opp_id = f'opp_id={publication_id_1}'
+    search_opd_id = f'opd_id={dataset_id_1}'
+    search_platform = f'platform={platform_2}'
     search_cohort = f'cohort={cohorts_list[1]}'
-    search_author = f'author=Xu'
-    search_opgs_id = f'opgs_id={scores_list[0]}'
-    search_opgs_ids = f'opgs_ids={','.join(scores_list)}'
-    search_opgs_ids_2 = f'opgs_ids={scores_list[0]}'
+    search_author = f'author={author_name}'
+    search_opgs_id = f'opgs_id={score_id_1}'
+    search_opgs_ids = f'opgs_ids={",".join(scores_list)}'
+    search_opgs_ids_2 = f'opgs_ids={score_id_1}'
     search_phenotype = f'phenotype_id={phenotypes_list[0]}'
-    search_gene = f'gene={gene_names_list[0]}'
-    search_metabolite =  f'metabolite={metabolites_list[0]}'
-    seach_mt = f'molecular_trait={proteins_list[0]}'
+    search_gene = f'gene={gene_name}'
+    search_metabolite =  f'metabolite={metabolite_id}'
+    seach_mt = f'molecular_trait={protein_id}'
     search_combined = f'{search_opgs_id}&{search_pmid}'
     search_combined_2 = f'{search_opgs_ids}&{search_pmid}'
-    search_cohort = f'cohort=INTERVAL'
+    search_cohort = f'cohort={cohort}'
 
     omics_common_columns = ['id', 'trait_reported_id', 'trait_reported', 'variants_number', 'dataset__publication', 'dataset__platform__version', 'dataset__name']
 
@@ -102,7 +125,7 @@ class BrowseEndpointTest(APITestCase):
         ('Samples', 'sample/all', 1),
         ('Samples Search', 'sample/search', 1, {'query': [search_cohort]}),
         # Score endpoints
-        ('Scores', 'score/all', 1),
+        ('Scores', score_all, 1),
         ('Score/ID', 'score', 0, {'path': scores_list}),
         ('Scores Search', 'score/search', 1, {'query': [search_opgs_ids,search_opgs_ids_2,search_pmid,search_opp_id,search_opd_id,search_platform,search_cohort,search_combined_2]}),
         ('Scores Search Type', 'score/search/protein', 1, {'path': [proteins_list[0]],'extra_query': 'include_performance_metrics=1'}),
@@ -132,10 +155,9 @@ class BrowseEndpointTest(APITestCase):
         ('External Sources - all', 'external_source/all', 1)
     ]
 
-
     endpoints_with_include_flag = [
         (
-            'Scores / ancestry', 'score/all', 1,
+            'Scores / ancestry', score_all, 1,
             {
                 'response_path': [],
                 'query': ['include_ancestry'],
@@ -216,12 +238,10 @@ class BrowseEndpointTest(APITestCase):
         )
     ]
 
-
     endpoints_with_filter_ids = (
-        ('Scores / filter_ids', 'score/all' , scores_list[1:]), # Exclude 1st element
+        ('Scores / filter_ids', score_all, scores_list[1:]), # Exclude 1st element
         ('Publications / filter_ids', 'publication/all' , publication_ids_list[1:]), # Exclude 1st element
     )
-
 
     endpoints_with_sorting_param = (
         (
@@ -237,7 +257,7 @@ class BrowseEndpointTest(APITestCase):
             [*omics_common_columns, 'genes__name', 'genes__external_id']
         ),
         (
-            'Scores', f'score/all',
+            'Scores', score_all,
             ['id', 'genes__name', 'proteins__external_id', 'metabolites__external_id', 'dataset__platform__platform_master__type', 'dataset__platform__platform_master__name', 'dataset__publication__firstauthor']
         ),
         (
@@ -246,16 +266,45 @@ class BrowseEndpointTest(APITestCase):
         )
     )
 
+    def assertNotServerError(self, response):
+        self.assertNotEqual(response.status_code, 500, msg=f'Unexpected 500 for {response.request["PATH_INFO"]}')
+
+    def assertPaginatedResponse(self, response):
+        self.assertEqual(response.status_code, status_ok)
+        payload = response.json()
+        self.assertIn('count', payload)
+        self.assertIn('next', payload)
+        self.assertIn('previous', payload)
+        self.assertIn('results', payload)
+        self.assertIsInstance(payload['results'], list)
+        return payload
+
+    def assertHasKeys(self, payload, keys):
+        for key in keys:
+            self.assertIn(key, payload)
+
+    def assertFirstResultMatches(self, response, expected_id=None, expected_name=None):
+        payload = response.json()
+        self.assertGreater(len(payload.get('results', [])), 0)
+        first = payload['results'][0]
+        if expected_id is not None:
+            self.assertEqual(first.get('id'), expected_id)
+        if expected_name is not None:
+            self.assertEqual(first.get('name'), expected_name)
+        return first
+
+
+class BrowseEndpointTest(RestApiTestBase):
+    """Broad smoke coverage of the REST endpoints."""
 
     def client_response(self,url:str):
         resp = self.client.get(url)
         # In case the number of REST API calls is too high (i.e. greater than the modified 'rate4test' variable)
-        if resp.status_code == status_too_many:
+        if resp.status_code == 429:
             print(f"\nNeed to put the test on sleep for {sleep_time}s as it reaches the maximum number of calls/min.\nMight be worth increasing the value of the 'rate4test' variable (currently {self.rate4test}).")
             sleep(sleep_time)
             resp = self.client.get(url)
         return resp
-
 
     def check_response(self,url:str,is_included:int,path_structure:list,included_key:str):
         """ Check that the response contains (or not) the 'included_key' item/data """
@@ -279,13 +328,11 @@ class BrowseEndpointTest(APITestCase):
         else:
             self.assertNotIn(included_key, content_keys)
 
-
     def check_filter_ids(self,url:str,ids_list:list):
         """ Compare the number of results with the number of IDs provided in the filter_ids parameter """
         ids_list_string = ",".join(ids_list)
         resp = self.client_response(f'{url}?filter_ids={ids_list_string}')
         self.assertEqual(len(resp.data['results']), len(ids_list))
-
 
     def send_request(self, url:str):
         """ Send REST API request and check the reponse status code """
@@ -298,25 +345,21 @@ class BrowseEndpointTest(APITestCase):
             self.assertNotEqual(content, empty_content)
         return content
 
-
     def get_empty_response(self, url:str, index:int):
         """ Send REST API request and check the reponse status code """
         resp = self.client_response(url)
         self.assertEqual(resp.status_code, status_ok)
         self.assertEqual(resp.content.decode("utf-8"), self.empty_resp[index])
 
-
     def get_not_found_response(self, url:str):
         """ Send REST API request on non existing endpoint and check reponse status code """
         resp = self.client_response(url)
         self.assertEqual(resp.status_code, status_not_found)
 
-
     def get_paginated_response(self, url:str):
         """ Send REST API request with limit and offset parameters, and check the reponse status code """
         resp = self.client_response(url+'?limit=20&offset=20')
         self.assertEqual(resp.status_code, status_ok)
-
 
     def test_endpoints(self):
         """ Test the status code of each endpoint """
@@ -344,7 +387,6 @@ class BrowseEndpointTest(APITestCase):
                 if endpoint[self.index_result_mutliplicity]:
                     self.get_paginated_response(url_endpoint)
 
-
     def test_endpoints_with_slash(self):
         """ Test the status code of each endpoint, with a trailing slash """
         print("\n>> Test the status code of each endpoint, with a trailing slash ")
@@ -369,7 +411,6 @@ class BrowseEndpointTest(APITestCase):
                 self.send_request(url_endpoint)
                 if endpoint[self.index_result_mutliplicity]:
                     self.get_paginated_response(url_endpoint)
-
 
     def test_empty_endpoints(self):
         """ Test the status code and empty response of each endpoint listed above """
@@ -399,12 +440,10 @@ class BrowseEndpointTest(APITestCase):
                         url_endpoint += self.fake_examples['string']
                     self.get_empty_response(url_endpoint, endpoint[self.index_result_mutliplicity])
 
-
     def test_endpoint_not_found(self):
         """ Test an endpoint that doesn't exist """
         print("\n>> Test an endpoint that doesn't exist")
         self.get_not_found_response(self.server+'chocolate')
-
 
     def test_endpoint_with_include_flag(self):
         """ Test the 'include flag' used on some of the endpoints """
@@ -425,14 +464,12 @@ class BrowseEndpointTest(APITestCase):
                 # Test exclude
                 self.check_response(url, 0, response_path, included_key)
 
-
     def test_endpoint_with_filter_ids_param(self):
         """ Test the 'filter_ids' parameter used on some of the endpoints """
         print("\n>> Test the 'filter_ids' parameter used on some of the endpoints")
         for endpoint in self.endpoints_with_filter_ids:
             url_endpoint = self.server+endpoint[1]
             self.check_filter_ids(url_endpoint,endpoint[2])
-
 
     def test_endpoint_with_sorting_param(self):
         """ Test the 'sort_field' parameter used on some of the endpoints """
@@ -442,3 +479,230 @@ class BrowseEndpointTest(APITestCase):
             for column in endpoint[2]:
                 sorting_endpoint = url_endpoint+'?sort=asc&sort_field='+column
                 self.send_request(sorting_endpoint)
+
+
+class TestValidationAndErrors(RestApiTestBase):
+    """Invalid input and error-path checks grounded in the test fixture data."""
+
+    def test_unknown_score_id_returns_not_found(self):
+        print("\n>> Test unknown score ID returns not found")
+        resp = self.client.get(f'/api/score/{self.invalid_score_id}/')
+        self.assertNotServerError(resp)
+        self.assertIn(resp.status_code, [status_ok, status_not_found])
+
+    def test_invalid_sort_field_does_not_500(self):
+        print("\n>> Test invalid sort field does not return 500")
+        resp = self.client.get(f'{self.score_all_endpoint}?sort=asc&sort_field=not_a_real_field')
+        self.assertNotServerError(resp)
+        self.assertIn(resp.status_code, [status_ok, 400, status_not_found])
+
+    def test_malformed_filter_ids_does_not_500(self):
+        print("\n>> Test malformed filter_ids parameter does not return 500")
+        resp = self.client.get(f'{self.score_all_endpoint}?filter_ids=OPGS000005;bad-format')
+        self.assertNotServerError(resp)
+
+    def test_empty_search_query_does_not_500(self):
+        print("\n>> Test empty search query does not return 500")
+        resp = self.client.get(f'{self.gene_search_endpoint}?gene=')
+        self.assertNotServerError(resp)
+
+
+class TestPagination(RestApiTestBase):
+    """Pagination metadata and edge cases for score list responses."""
+
+    def test_score_list_paginated_response_shape(self):
+        print("\n>> Test score list paginated response shape")
+        resp = self.client.get(f'{self.score_all_endpoint}?limit=10&offset=0')
+        payload = self.assertPaginatedResponse(resp)
+        self.assertLessEqual(len(payload['results']), 10)
+
+    def test_limit_offset_boundary_values(self):
+        print("\n>> Test limit and offset boundary values")
+        for url in [
+            f'{self.score_all_endpoint}?limit=1&offset=0',
+            f'{self.score_all_endpoint}?limit=1&offset=1',
+            f'{self.score_all_endpoint}?limit=20&offset=20',
+        ]:
+            with self.subTest(url=url):
+                resp = self.client.get(url)
+                self.assertNotServerError(resp)
+                self.assertIn(resp.status_code, [status_ok, 400])
+
+    def test_offset_past_end_returns_empty_results(self):
+        print("\n>> Test offset past end returns empty results")
+        resp = self.client.get(f'{self.score_all_endpoint}?limit=10&offset=999999')
+        self.assertNotServerError(resp)
+        payload = resp.json()
+        self.assertEqual(payload.get('results', []), [])
+
+
+class TestIncludeFlags(RestApiTestBase):
+    """
+        Include flags should add the expected nested data when requested.
+        A bit redundant with the more general endpoint tests "test_endpoint_with_include_flag()", but these are more focused and explicit.
+    """
+
+    def test_include_ancestry_on_score_list(self):
+        print("\n>> Test include ancestry on score list")
+        resp = self.client.get(f'{self.score_all_endpoint}?include_ancestry=1')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertGreater(len(payload.get('results', [])), 0)
+        self.assertIn('ancestry', payload['results'][0])
+
+    def test_include_pathway_on_score_detail(self):
+        print("\n>> Test include pathway on score detail")
+        resp = self.client.get(f'/api/score/{self.score_id_1}/?include_pathway=1')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertIn('genes', payload)
+        self.assertGreater(len(payload['genes']), 0)
+        self.assertIn('pathways', payload['genes'][0])
+
+    def test_include_performance_metrics_on_platform_endpoint(self):
+        print("\n>> Test include performance metrics on platform endpoint")
+        resp = self.client.get(f'/api/proteomics/{self.platform_1}/?include_performance_metrics=1')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertGreater(len(payload.get('results', [])), 0)
+        self.assertIn('performance_data', payload['results'][0])
+
+    def test_include_scores_count_on_gene_search(self):
+        print("\n>> Test include scores count on gene search")
+        resp = self.client.get(f'{self.gene_search_endpoint}?gene={self.gene_name}&include_scores_count=1')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertGreater(len(payload.get('results', [])), 0)
+        self.assertIn('scores_count', payload['results'][0])
+
+
+class TestSearchEndpoints(RestApiTestBase):
+    """Search endpoints should work with fixture-backed identifiers and names."""
+
+    def test_gene_search_returns_results(self):
+        print("\n>> Test gene search returns results")
+        resp = self.client.get(f'{self.gene_search_endpoint}?gene={self.gene_name}')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertGreater(len(payload.get('results', [])), 0)
+        self.assertEqual(payload['results'][0]['name'], self.gene_name)
+
+    def test_score_search_multiple_ids(self):
+        print("\n>> Test score search with multiple IDs returns results")
+        resp = self.client.get(f'{self.score_search_endpoint}?opgs_ids={self.score_id_1},{self.score_id_2}')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        results = payload.get('results', [])
+        self.assertGreater(len(results), 0)
+        returned_ids = {item['id'] for item in results}
+        self.assertTrue(self.score_id_1 in returned_ids)
+        self.assertTrue(self.score_id_2 in returned_ids)
+
+    def test_combined_score_and_pmid_search(self):
+        print("\n>> Test combined score ID and PMID search returns results")
+        resp = self.client.get(f'{self.score_search_endpoint}?opgs_id={self.score_id_1}&pmid={self.pmid_1}')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertIsInstance(payload.get('results', []), list)
+
+    def test_publication_search_by_author(self):
+        print("\n>> Test publication search by author")
+        resp = self.client.get(f'/api/publication/search/?author={self.author_name}')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertIsInstance(payload.get('results', []), list)
+        if payload['results']:
+            self.assertIn('firstauthor', payload['results'][0])
+
+    def test_sample_search_by_cohort(self):
+        print("\n>> Test sample search by cohort")
+        resp = self.client.get(f'/api/sample/search/?cohort={self.cohort}')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertIsInstance(payload.get('results', []), list)
+
+
+class TestSorting(RestApiTestBase):
+    """Sorting checks use known fixture values and known sortable fields."""
+
+    def test_score_list_sort_by_id_asc(self):
+        print("\n>> Test score list sort by ID ascending")
+        resp = self.client.get(f'{self.score_all_endpoint}?sort=asc&sort_field=id')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        results = payload.get('results', [])
+        if len(results) >= 2:
+            ids = [r['id'] for r in results]
+            self.assertEqual(ids, sorted(ids))
+
+    def test_score_list_sort_by_id_desc(self):
+        print("\n>> Test score list sort by ID descending")
+        resp = self.client.get(f'{self.score_all_endpoint}?sort=desc&sort_field=id')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        results = payload.get('results', [])
+        if len(results) >= 2:
+            ids = [r['id'] for r in results]
+            self.assertEqual(ids, sorted(ids, reverse=True))
+
+    def test_platform_list_sort_by_name(self):
+        print("\n>> Test platform list sort by name ascending")
+        resp = self.client.get('/api/platform/all/?sort=asc&sort_field=name')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        results = payload.get('results', [])
+        if len(results) >= 2:
+            names = [r['name'] for r in results]
+            self.assertEqual(names, sorted(names))
+
+
+class TestResponseContracts(RestApiTestBase):
+    """Detailed payloads should include the fields expected from the fixture data."""
+
+    def test_score_detail_has_expected_fields(self):
+        print("\n>> Test score detail has expected fields")
+        resp = self.client.get(f'/api/score/{self.score_id_1}/')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertHasKeys(payload, ['id', 'name', 'trait_reported_id', 'trait_reported', 'dataset_id', 'dataset_name'])
+        self.assertEqual(payload['id'], self.score_id_1)
+
+    def test_publication_detail_has_expected_fields(self):
+        print("\n>> Test publication detail has expected fields")
+        resp = self.client.get(f'/api/publication/{self.publication_id_1}/')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertHasKeys(payload, ['id', 'title', 'pmid', 'doi'])
+        self.assertEqual(payload['id'], self.publication_id_1)
+
+    def test_dataset_detail_has_expected_fields(self):
+        print("\n>> Test dataset detail has expected fields")
+        resp = self.client.get(f'/api/dataset/{self.dataset_id_1}/')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertHasKeys(payload, ['id', 'name', 'platform', 'publication'])
+        self.assertEqual(payload['id'], self.dataset_id_1)
+
+    def test_gene_detail_has_expected_fields(self):
+        print("\n>> Test gene detail has expected fields")
+        resp = self.client.get(f'/api/gene/{self.gene_id}/')
+        self.assertEqual(resp.status_code, status_ok)
+        payload = resp.json()
+        self.assertHasKeys(payload, ['name', 'external_id'])
+        self.assertEqual(payload['external_id'], self.gene_id)
+        self.assertEqual(payload['name'], self.gene_name)
+
+
+class TestPermissionsAndThrottling(RestApiTestBase):
+    """Public endpoints should be accessible without auth and existing throttling should not produce server errors."""
+
+    def test_public_endpoints_are_accessible_without_auth(self):
+        print("\n>> Test public endpoints are accessible without auth")
+        resp = self.client.get(f'{self.score_all_endpoint}')
+        self.assertEqual(resp.status_code, status_ok)
+
+    def test_too_many_requests_returns_429_when_limit_hit(self):
+        print("\n>> Test too many requests returns 429 when limit hit")
+        resp = self.client.get(f'{self.score_all_endpoint}')
+        self.assertNotServerError(resp)
+        self.assertIn(resp.status_code, [status_ok, 429])

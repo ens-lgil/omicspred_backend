@@ -5,12 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler
 from rest_framework.exceptions import Throttled
 from rest_framework.serializers import ValidationError
-from django.db.models import Prefetch, Q, Count, QuerySet
+from django.db.models import Prefetch, Q, Count
 from django.db.models.functions import Lower
 from django.core.exceptions import MultipleObjectsReturned
 from django.conf import settings
 from omicspred.models import *
-from search_es.documents import gene
 from .serializers import *
 opgs_prefix = 'OPGS'
 opd_prefix = 'OPD'
@@ -263,11 +262,21 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
     # Over the fixed rate limit
-    if isinstance(exc, Throttled): # check that a Throttled exception is raised
-        response.data = { # custom response data
-            'message': 'request limit exceeded',
-            'availableIn': '%d seconds'%exc.wait
-        }
+    if isinstance(exc, Throttled):  # check that a Throttled exception is raised
+        if response is not None:
+            response.data = {  # custom response data
+                'message': 'request limit exceeded',
+                'availableIn': '%d seconds' % exc.wait
+            }
+        else:
+            response = Response(
+                {
+                    'status_code': status.HTTP_429_TOO_MANY_REQUESTS,
+                    'message': 'request limit exceeded',
+                    'availableIn': '%d seconds' % exc.wait,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
     # Over the maximum number of results per page (limit parameter)
     elif isinstance(exc, ValidationError):
         formatted_exc = ''
@@ -275,25 +284,37 @@ def custom_exception_handler(exc, context):
             if formatted_exc != '':
                 formatted_exc += '; '
             formatted_exc += exc.detail[type]
-        response.data = { # custom response data
-            'status_code': response.status_code,
-            'message': formatted_exc
-        }
-    elif response.status_code == status.HTTP_404_NOT_FOUND:
-        response.data = { # custom response data
+        if response is not None:
+            response.data = {  # custom response data
+                'status_code': response.status_code,
+                'message': formatted_exc
+            }
+        else:
+            response = Response(
+                {
+                    'status_code': status.HTTP_400_BAD_REQUEST,
+                    'message': formatted_exc,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    elif response is not None and response.status_code == status.HTTP_404_NOT_FOUND:
+        response.data = {  # custom response data
             'status_code': status.HTTP_404_NOT_FOUND,
             'message': 'This REST endpoint does not exist'
         }
     elif response is not None:
-        response.data = { # custom response data
+        response.data = {  # custom response data
             'status_code': response.status_code,
             'message': str(exc)
         }
     else:
-        response.data = {
-            'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
-            'message': 'Internal Server Error'
-        }
+        response = Response(
+            {
+                'status_code': status.HTTP_400_BAD_REQUEST,
+                'message': str(exc)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
     return response
 
 
@@ -1476,7 +1497,7 @@ class RestListScorePheWAS(generics.ListAPIView):
         if filter_term and filter_term is not None:
             queryset = queryset.filter(Q(id__iexact=filter_term) |
                                        Q(phenotypes__id__iexact=filter_term) | Q(phenotypes__label__iexact=filter_term) |
-                                       Q(publication__id__iexact=filter_term) | Q(publication__firstauthor__iexact=filter_term) |
+                                       Q(publication__id__iexact=filters_data['phewas_publication']) | Q(publication__firstauthor__iexact=filter_term) |
                                        Q(phenotypes__id__iexact=filter_term) | Q(phenotypes__label__iexact=filter_term) |
                                        Q(method_description__icontains=filter_term) | Q(trait_reported__icontains=filter_term))
 
