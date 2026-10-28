@@ -785,6 +785,84 @@ class ScorePheWASSerializer(serializers.ModelSerializer):
         return obj.values_dict
 
 
+##########################
+#### Website specific ####
+##########################
+
+class PublicationWebsiteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Publication
+        meta_fields = ('id', 'journal', 'firstauthor', 'date_publication')
+        fields = meta_fields
+        read_only_fields = meta_fields
+
+
+class PlatformWebsiteSerializer(serializers.ModelSerializer):
+    type = serializers.SerializerMethodField('get_type')
+
+    class Meta:
+        model = Platform
+        meta_fields = ('name', 'type')
+        fields = meta_fields
+        read_only_fields = meta_fields
+
+    def get_type(self, obj):
+        return obj.platform_master.type
+
+
+class TissueWebsiteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tissue
+        meta_fields = ('id', 'label')
+        fields = meta_fields
+        read_only_fields = meta_fields
+
+
+class ScoreWebsiteLightSerializer(serializers.ModelSerializer):
+    dataset_id = serializers.SerializerMethodField()
+    dataset_name = serializers.SerializerMethodField()
+    publication = serializers.SerializerMethodField()
+    platform = serializers.SerializerMethodField()
+    tissue = serializers.SerializerMethodField()
+
+    genes = GeneSerializerMinimal(many=True, read_only=True)
+    transcripts = TranscriptBaseSerializer(many=True, read_only=True)
+    proteins = ProteinBaseSerializer(many=True, read_only=True)
+    metabolites = MetaboliteBaseSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Score
+        meta_fields = ('id', 'name', 'trait_reported', 'trait_reported_id',
+                       'dataset_id', 'dataset_name', 'publication', 'platform', 'tissue',
+                       'genes', 'transcripts', 'proteins', 'metabolites', 'variants_number')
+        fields = meta_fields
+        read_only_fields = meta_fields
+
+    def get_dataset_id(self,obj):
+        ''' Get Dataset ID '''
+        return obj.dataset.id
+
+    def get_dataset_name(self,obj):
+        ''' Get Dataset name '''
+        return obj.dataset.name
+
+    def get_publication(self, obj):
+        ''' Get Publication model '''
+        publication = obj.dataset.publication
+        return PublicationWebsiteSerializer(publication, many=False, read_only=True).data
+
+    def get_platform(self, obj):
+        ''' Get Platform model '''
+        platform = obj.dataset.platform
+        return PlatformWebsiteSerializer(platform, many=False, read_only=True).data
+
+    def get_tissue(self, obj):
+        ''' Get Platform model '''
+        tissue = obj.dataset.tissue
+        return TissueWebsiteSerializer(tissue, many=False, read_only=True).data
+
+
+
 ###############
 #### TESTS ####
 ###############
