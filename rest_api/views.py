@@ -35,6 +35,13 @@ only_dict = {
         'variants_interactions', 'variants_genomebuild',
         'comment', 'license'
     ],
+    'score_website': [
+        *score_cols_base,
+        'dataset__id', 'dataset__name',
+        'dataset__publication_id','dataset__publication__id','dataset__publication__journal','dataset__publication__firstauthor','dataset__publication__date_publication',
+        'dataset__platform__name', 'dataset__platform__platform_master__type',
+        'dataset__tissue__id','dataset__tissue__label'
+    ],
     'scores_pp_table': [
         *score_cols_base,'ancestry',
         'dataset__id','dataset__name',
@@ -229,11 +236,13 @@ def filter_data(queryset, filter_params):
     if 'omics_type' in filters_types:
         query_filter_list.append(Q(dataset__platform__platform_master__type__exact=filters_data['omics_type']))
     if 'publication' in filters_types:
-        query_filter_list.append(Q(dataset__publication__id__iexact=filters_data['publication']))
+        pub_num = get_publication_num(filters_data['publication'])
+        query_filter_list.append(Q(dataset__publication_id=pub_num))
     if 'tissue' in filters_types:
         query_filter_list.append(Q(dataset__tissue__id__iexact=filters_data['tissue']))
     if 'dataset' in filters_types:
-        query_filter_list.append(Q(dataset__id__exact=filters_data['dataset']))
+        dataset_num = get_dataset_num(filters_data['dataset'])
+        query_filter_list.append(Q(dataset__num=dataset_num))
     if 'gwas' in filters_types:
         query_filter_list.append(Q(samples__source_gwas_catalog__iexact=filters_data['gwas']))
 
@@ -242,6 +251,8 @@ def filter_data(queryset, filter_params):
         filter_score_id = filters_data['phewas_score_id']
         if filter_score_id.startswith('OPGS'):
             score_num = get_score_num(filter_score_id)
+            query_filter_list.append(Q(score__num=score_num))
+        else:
             query_filter_list.append(Q(score__id__exact=filter_score_id))
     if 'phenotype' in filters_types:
         query_filter_list.append(Q(phenotypes__id__iexact=filters_data['phenotype'])| Q(phenotypes__label__iexact=filters_data['phenotype']))
@@ -262,21 +273,11 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
     # Over the fixed rate limit
-    if isinstance(exc, Throttled):  # check that a Throttled exception is raised
-        if response is not None:
-            response.data = {  # custom response data
-                'message': 'request limit exceeded',
-                'availableIn': '%d seconds' % exc.wait
-            }
-        else:
-            response = Response(
-                {
-                    'status_code': status.HTTP_429_TOO_MANY_REQUESTS,
-                    'message': 'request limit exceeded',
-                    'availableIn': '%d seconds' % exc.wait,
-                },
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+    if isinstance(exc, Throttled): # check that a Throttled exception is raised
+        response.data = { # custom response data
+            'message': 'request limit exceeded',
+            'availableIn': '%d seconds'%exc.wait
+        }
     # Over the maximum number of results per page (limit parameter)
     elif isinstance(exc, ValidationError):
         formatted_exc = ''
@@ -284,26 +285,17 @@ def custom_exception_handler(exc, context):
             if formatted_exc != '':
                 formatted_exc += '; '
             formatted_exc += exc.detail[type]
-        if response is not None:
-            response.data = {  # custom response data
-                'status_code': response.status_code,
-                'message': formatted_exc
-            }
-        else:
-            response = Response(
-                {
-                    'status_code': status.HTTP_400_BAD_REQUEST,
-                    'message': formatted_exc,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        response.data = { # custom response data
+            'status_code': response.status_code,
+            'message': formatted_exc
+        }
     elif response is not None and response.status_code == status.HTTP_404_NOT_FOUND:
-        response.data = {  # custom response data
+        response.data = { # custom response data
             'status_code': status.HTTP_404_NOT_FOUND,
             'message': 'This REST endpoint does not exist'
         }
     elif response is not None:
-        response.data = {  # custom response data
+        response.data = { # custom response data
             'status_code': response.status_code,
             'message': str(exc)
         }
@@ -1238,10 +1230,13 @@ class RestListScores(generics.ListAPIView):
         # Fetch all the Scores
         if include_ancestry and str(include_ancestry) == '1':
             self.serializer_class = ScoreSerializer
+        website = self.request.query_params.get('website')
+        # Only website table
+        if website and str(website) == '1':
+            self.serializer_class = ScoreWebsiteLightSerializer
+            queryset = Score.objects.only(*only_dict['score_website']).select_related(*related_dict['score_dataset_full']).all().order_by('num')
         else:
-            self.serializer_class = ScoreLightSerializer
-        # queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset_full']).all().prefetch_related(*related_dict['molecular_traits']).order_by('num')
-        queryset = get_score_queryset_base()
+            queryset = get_score_queryset_base()
         queryset = queryset.prefetch_related(*related_dict['molecular_traits']).order_by('num')
         # Filter by list of Score IDs
         ids_list = get_ids_list(self)
@@ -1330,11 +1325,6 @@ class RestScoreSearchByMolecularTrait(generics.ListAPIView):
         if query_list:
             include_performance_metrics = self.request.query_params.get('include_performance_metrics')
             include_performance_data = self.request.query_params.get('include_performance_data')
-            # website_table = self.request.query_params.get('website_table')
-            # Only website table
-            # if website_table and str(website_table) == '1':
-            #     self.serializer_class = ScoreWebsiteSerializer
-            #     queryset = Score.objects.defer(*defer_dict['scores_defer']).select_related(*related_dict['score_dataset']).filter(reduce(operator.or_,query_list)).prefetch_related(*related_dict['molecular_traits'])
             # Add the performance metrics data structure
             if include_performance_metrics and str(include_performance_metrics) == '1':
                 self.serializer_class = ScorePerformanceSerializer
@@ -1497,7 +1487,7 @@ class RestListScorePheWAS(generics.ListAPIView):
         if filter_term and filter_term is not None:
             queryset = queryset.filter(Q(id__iexact=filter_term) |
                                        Q(phenotypes__id__iexact=filter_term) | Q(phenotypes__label__iexact=filter_term) |
-                                       Q(publication__id__iexact=filters_data['phewas_publication']) | Q(publication__firstauthor__iexact=filter_term) |
+                                       Q(publication__id__iexact=filter_term) | Q(publication__firstauthor__iexact=filter_term) |
                                        Q(phenotypes__id__iexact=filter_term) | Q(phenotypes__label__iexact=filter_term) |
                                        Q(method_description__icontains=filter_term) | Q(trait_reported__icontains=filter_term))
 
