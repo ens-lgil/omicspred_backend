@@ -68,8 +68,24 @@ class ExportSQLiteTest(TestCase):
         return self.get_one_row_data(cursor,'genome_build')
 
 
+    def get_table_names(self,cursor:sqlite3.Cursor):
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        return [row[0] for row in cursor.fetchall()]
+
+
+    def get_table_schema(self,cursor:sqlite3.Cursor, table_name:str):
+        cursor.execute(f"PRAGMA table_info({table_name});")
+        return cursor.fetchall()
+
+
+    def get_table_row_count(self,cursor:sqlite3.Cursor, table_name:str):
+        cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
+        return cursor.fetchone()[0]
+
+
     def test_sqlite_export(self):
-        print("# Test SQLite export")
+        print("\n## Test SQLite export ##")
+        print("> Test SQLite export")
         datasets = Dataset.objects.filter(id=self.opd_id)
         sqlite_export = SqliteExport(self.opp_id,self.output_sqlite_dir,self.scoring_files_dir,datasets,self.use_different_id_as_gene)
         sqlite_export.generate_sqlite_files(True)
@@ -109,3 +125,58 @@ class ExportSQLiteTest(TestCase):
         for index, col_value in enumerate(output_genome_build):
             self.assertEqual(output_genome_build[index],ref_genome_build[index])
 
+
+    def test_sqlite_export_has_expected_tables(self):
+        print("> Test SQLite export tables")
+        datasets = Dataset.objects.filter(id=self.opd_id)
+        sqlite_export = SqliteExport(self.opp_id,self.output_sqlite_dir,self.scoring_files_dir,datasets,self.use_different_id_as_gene)
+        sqlite_export.generate_sqlite_files(True)
+
+        sqlite_output_connection = sqlite3.connect(self.output_sqlite_filepath)
+        sqlite_output_cursor = sqlite_output_connection.cursor()
+        table_names = self.get_table_names(sqlite_output_cursor)
+        sqlite_output_cursor.close()
+        sqlite_output_connection.close()
+
+        self.assertTrue({'extra', 'weights', 'sample_info', 'genome_build'}.issubset(set(table_names)))
+
+
+    def test_sqlite_export_has_expected_schema(self):
+        print("> Test SQLite export schema")
+        datasets = Dataset.objects.filter(id=self.opd_id)
+        sqlite_export = SqliteExport(self.opp_id,self.output_sqlite_dir,self.scoring_files_dir,datasets,self.use_different_id_as_gene)
+        sqlite_export.generate_sqlite_files(True)
+
+        sqlite_output_connection = sqlite3.connect(self.output_sqlite_filepath)
+        sqlite_output_cursor = sqlite_output_connection.cursor()
+
+        schema_weights = self.get_table_schema(sqlite_output_cursor, 'weights')
+        schema_extra = self.get_table_schema(sqlite_output_cursor, 'extra')
+
+        sqlite_output_cursor.close()
+        sqlite_output_connection.close()
+
+        self.assertGreater(len(schema_weights), 0)
+        self.assertGreater(len(schema_extra), 0)
+        self.assertIn('gene', [col[1] for col in schema_weights])
+        self.assertIn('rsid', [col[1] for col in schema_weights])
+        self.assertIn('genename', [col[1] for col in schema_extra])
+
+
+    def test_sqlite_export_has_expected_row_counts(self):
+        print("> Test SQLite export row counts")
+        datasets = Dataset.objects.filter(id=self.opd_id)
+        sqlite_export = SqliteExport(self.opp_id,self.output_sqlite_dir,self.scoring_files_dir,datasets,self.use_different_id_as_gene)
+        sqlite_export.generate_sqlite_files(True)
+
+        sqlite_output_connection = sqlite3.connect(self.output_sqlite_filepath)
+        sqlite_output_cursor = sqlite_output_connection.cursor()
+
+        weights_count = self.get_table_row_count(sqlite_output_cursor, 'weights')
+        sample_info_count = self.get_table_row_count(sqlite_output_cursor, 'sample_info')
+
+        sqlite_output_cursor.close()
+        sqlite_output_connection.close()
+
+        self.assertGreater(weights_count, 0)
+        self.assertEqual(sample_info_count, 1)
