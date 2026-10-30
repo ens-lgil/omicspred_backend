@@ -41,7 +41,7 @@ class ExportMetadataTest(TestCase):
 
     def check_file(self):
         ''' Check file exists and is not empty '''
-        print(f' - Check file {self.filename}')
+        print(f'> Check file {self.filename}')
         # Test dir exist
         self.assertEqual(os.path.exists(self.output_export_dir),1)
         # Test file exist
@@ -53,10 +53,10 @@ class ExportMetadataTest(TestCase):
 
     def check_spreadsheets(self):
         ''' Check file spreadsheets '''
-        print(f' - Check content of {self.filename}')
+        print(f'> Check content of {self.filename}')
         ref_filepath = f'{self.data_export_dir}/{self.filename}'
         for sp_name in self.spreadsheets:
-            print(f'   > Check spreadsheet {sp_name}')
+            print(f'   -> Check spreadsheet {sp_name}')
             df_test = pd.read_excel(self.output_filepath, sheet_name=sp_name, index_col=0)
             df_ref = pd.read_excel(ref_filepath, sheet_name=sp_name, index_col=0)
             # Columns
@@ -65,8 +65,25 @@ class ExportMetadataTest(TestCase):
             self.assertEqual(len(df_test.index), len(df_ref.index))
 
 
+    def check_sheet_names(self):
+        ''' Check required sheets are present in the exported workbook '''
+        print(f'> Check workbook sheets for {self.filename}')
+        workbook = pd.ExcelFile(self.output_filepath)
+        self.assertTrue(set(self.spreadsheets).issubset(set(workbook.sheet_names)))
+
+
+    def check_dataset_sheet_content(self):
+        ''' Check important values in the Dataset sheet '''
+        print(f'> Check Dataset sheet content for {self.filename}')
+        df = pd.read_excel(self.output_filepath, sheet_name='Dataset', index_col=0)
+        self.assertGreater(len(df.index), 0)
+        self.assertGreater(len(df.columns), 0)
+        self.assertIn('OPD000001', [str(val) for val in df.index.astype(str).tolist()])
+
+
     def test_metadata_export(self):
-        print("# Test Metadata export")
+        print("\n## Test Metadata export ##")
+        print("> Test Metadata export")
 
         # Mimic DatasetsSelection
         col = list(dataset_selection.keys())[0]
@@ -81,3 +98,34 @@ class ExportMetadataTest(TestCase):
         self.check_file()
         self.check_spreadsheets()
 
+
+    def test_metadata_export_has_required_sheets(self):
+        print("> Test Metadata export sheet names")
+
+        col = list(dataset_selection.keys())[0]
+        value = dataset_selection[col]
+        param = Q(**{f'{col}':value})
+
+        datasets = Dataset.objects.filter(param).order_by('num')
+        dataset = datasets[0]
+        metadata2export = MetadataExport(self.output_export_dir, sqlite_exports_dir, dataset)
+        metadata2export.generate_metadata()
+
+        self.check_file()
+        self.check_sheet_names()
+
+
+    def test_metadata_export_dataset_sheet_has_expected_values(self):
+        print("> Test Metadata export dataset values")
+
+        col = list(dataset_selection.keys())[0]
+        value = dataset_selection[col]
+        param = Q(**{f'{col}':value})
+
+        datasets = Dataset.objects.filter(param).order_by('num')
+        dataset = datasets[0]
+        metadata2export = MetadataExport(self.output_export_dir, sqlite_exports_dir, dataset)
+        metadata2export.generate_metadata()
+
+        self.check_file()
+        self.check_dataset_sheet_content()
